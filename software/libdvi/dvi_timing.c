@@ -214,6 +214,20 @@ static uint32_t __attribute__((aligned(8))) __dvi_const(empty_scanline_tmds)[6] 
 };
 #endif
 
+// Black
+static uint32_t __dvi_const(black_scanline_tmds)[3] = {
+	0x7fd00u, // 0x00, 0x00
+	0x7fd00u, // 0x00, 0x00
+	0x7fd00u, // 0x00, 0x00
+};
+
+// Video Gaurdband
+static uint32_t __dvi_const(video_gaurdband_syms)[3] = {
+	0b10110011001011001100,
+	0b01001100110100110011,
+	0b10110011001011001100,
+};
+
 void dvi_timing_state_init(struct dvi_timing_state *t) {
 	t->v_ctr = 0;
 	t->v_state = DVI_STATE_FRONT_PORCH;
@@ -225,7 +239,6 @@ void __dvi_func(dvi_timing_state_advance)(const struct dvi_timing *t, struct dvi
 		    (s->v_state == DVI_STATE_SYNC && s->v_ctr == t->v_sync_width) ||
 		    (s->v_state == DVI_STATE_BACK_PORCH && s->v_ctr == t->v_back_porch) ||
 		    (s->v_state == DVI_STATE_ACTIVE && s->v_ctr == t->v_active_lines)) {
-
 			s->v_state = (s->v_state + 1) % DVI_STATE_COUNT;
 			s->v_ctr = 0;
 		}
@@ -269,17 +282,43 @@ void dvi_setup_scanline_for_vblank(const struct dvi_timing *t, const struct dvi_
 	_set_data_cb(&synclist[2], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_back_porch    / DVI_SYMBOLS_PER_WORD, 2, true);
 	_set_data_cb(&synclist[3], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 2, false);
 
-	for (int i = 0; i < N_TMDS_LANES; ++i) {
-		if (i == TMDS_SYNC_LANE)
-			continue;
+    //Removed starting from 0 since is TMDS_SYNC_LANE
+	for (int i = 1; i < N_TMDS_LANES; ++i) {
 		dma_cb_t *cblist = dvi_lane_from_list(l, i);
 		_set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync,(t->h_front_porch + t->h_sync_width + t->h_back_porch) / DVI_SYMBOLS_PER_WORD, 2, false);
 		_set_data_cb(&cblist[1], &dma_cfg[i], sym_no_sync, t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 2, false);
 	}
 }
 
+void dvi_setup_scanline_for_vblank_with_audio(const struct dvi_timing *t, const struct dvi_lane_dma_cfg dma_cfg[],
+		bool vsync_asserted, struct dvi_scanline_dma_list *l) {
+
+	bool vsync = t->v_sync_polarity == vsync_asserted;
+	const uint32_t *sym_hsync_off = get_ctrl_sym(vsync, !t->h_sync_polarity);
+	const uint32_t *sym_hsync_on  = get_ctrl_sym(vsync,  t->h_sync_polarity);
+	const uint32_t *sym_no_sync   = get_ctrl_sym(false,  false             );
+	const uint32_t *sym_preamble_to_data12 = &dvi_ctrl_syms[1];
+	const uint32_t *data_packet0 = getDefaultDataPacket0(vsync, t->h_sync_polarity);
+
+    dma_cb_t *cblist = dvi_lane_from_list(l, TMDS_SYNC_LANE);
+    _set_data_cb(&cblist[0], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_front_porch / DVI_SYMBOLS_PER_WORD, 2, false);
+    _set_data_cb(&cblist[1], &dma_cfg[TMDS_SYNC_LANE], data_packet0, N_DATA_ISLAND_WORDS, 0, false);
+    _set_data_cb(&cblist[2], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_on, (t->h_sync_width - W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+    _set_data_cb(&cblist[3], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_back_porch / DVI_SYMBOLS_PER_WORD, 2, true);
+    _set_data_cb(&cblist[4], &dma_cfg[TMDS_SYNC_LANE], sym_hsync_off, t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 2, false);
+
+	for (int i = 1; i < N_TMDS_LANES; ++i) {
+		cblist = dvi_lane_from_list(l, i);
+        _set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync, (t->h_front_porch - W_PREAMBLE) / DVI_SYMBOLS_PER_WORD, 2, false);
+        _set_data_cb(&cblist[1], &dma_cfg[i], sym_preamble_to_data12, W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
+        _set_data_cb(&cblist[2], &dma_cfg[i], getDefaultDataPacket12(), N_DATA_ISLAND_WORDS, 0, false);
+        _set_data_cb(&cblist[3], &dma_cfg[i], sym_no_sync, (t->h_sync_width + t->h_back_porch - W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+        _set_data_cb(&cblist[4], &dma_cfg[i], sym_no_sync, t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 2, false);
+	}
+}
+
 void dvi_setup_scanline_for_active(const struct dvi_timing *t, const struct dvi_lane_dma_cfg dma_cfg[],
-		uint32_t *tmdsbuf, struct dvi_scanline_dma_list *l) {
+		uint32_t *tmdsbuf, struct dvi_scanline_dma_list *l, bool black) {
 
 	const uint32_t *sym_hsync_off = get_ctrl_sym(!t->v_sync_polarity, !t->h_sync_polarity);
 	const uint32_t *sym_hsync_on  = get_ctrl_sym(!t->v_sync_polarity,  t->h_sync_polarity);
@@ -304,23 +343,79 @@ void dvi_setup_scanline_for_active(const struct dvi_timing *t, const struct dvi_
 		}
 		else {
 			// Use read ring to repeat the correct DC-balanced symbol pair on blank scanlines (4 or 8 byte period)
-			_set_data_cb(&cblist[target_block], &dma_cfg[i], &empty_scanline_tmds[2 * i / DVI_SYMBOLS_PER_WORD],
+			_set_data_cb(&cblist[target_block], &dma_cfg[i], &(black ? black_scanline_tmds : empty_scanline_tmds)[2 * i / DVI_SYMBOLS_PER_WORD],
 				t->h_active_pixels / DVI_SYMBOLS_PER_WORD, DVI_SYMBOLS_PER_WORD == 2 ? 2 : 3, false);
 		}
 	}
 }
 
-void __dvi_func(dvi_update_scanline_data_dma)(const struct dvi_timing *t, const uint32_t *tmdsbuf, struct dvi_scanline_dma_list *l) {
+void dvi_setup_scanline_for_active_with_audio(const struct dvi_timing *t, const struct dvi_lane_dma_cfg dma_cfg[],
+		uint32_t *tmdsbuf, struct dvi_scanline_dma_list *l, bool black) {
+
+	const uint32_t *sym_hsync_off = get_ctrl_sym(!t->v_sync_polarity, !t->h_sync_polarity);
+	const uint32_t *sym_hsync_on  = get_ctrl_sym(!t->v_sync_polarity,  t->h_sync_polarity);
+	const uint32_t *sym_no_sync   = get_ctrl_sym(false,                false             );
+	const uint32_t *sym_preamble_to_data12 = &dvi_ctrl_syms[1];
+	const uint32_t *sym_preamble_to_video1 = &dvi_ctrl_syms[1];
+	const uint32_t *sym_preamble_to_video2 = &dvi_ctrl_syms[0];
+	const uint32_t *data_packet0 = getDefaultDataPacket0(!t->v_sync_polarity, t->h_sync_polarity);
+
 	for (int i = 0; i < N_TMDS_LANES; ++i) {
-#if DVI_MONOCHROME_TMDS
-		const uint32_t *lane_tmdsbuf = tmdsbuf;
-#else
-		const uint32_t *lane_tmdsbuf = tmdsbuf + i * t->h_active_pixels / DVI_SYMBOLS_PER_WORD;
-#endif
-		if (i == TMDS_SYNC_LANE)
-			dvi_lane_from_list(l, i)[3].read_addr = lane_tmdsbuf;
-		else
-			dvi_lane_from_list(l, i)[1].read_addr = lane_tmdsbuf;
+		dma_cb_t *cblist = dvi_lane_from_list(l, i);
+
+		int active_block;
+		if (i == TMDS_SYNC_LANE) {
+			_set_data_cb(&cblist[0], &dma_cfg[i], sym_hsync_off, t->h_front_porch / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[1], &dma_cfg[i], data_packet0, N_DATA_ISLAND_WORDS, 0, false);
+			_set_data_cb(&cblist[2], &dma_cfg[i], sym_hsync_on, (t->h_sync_width - W_DATA_ISLAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[3], &dma_cfg[i], sym_hsync_off, (t->h_back_porch - W_GUARDBAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[4], &dma_cfg[i], &video_gaurdband_syms[0], W_GUARDBAND / DVI_SYMBOLS_PER_WORD, 2, true);
+			active_block = 5;
+		} else {
+			_set_data_cb(&cblist[0], &dma_cfg[i], sym_no_sync, (t->h_front_porch - W_PREAMBLE) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[1], &dma_cfg[i], sym_preamble_to_data12, W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[2], &dma_cfg[i], getDefaultDataPacket12(), N_DATA_ISLAND_WORDS, 0, false);
+			_set_data_cb(&cblist[3], &dma_cfg[i], sym_no_sync, (t->h_sync_width + t->h_back_porch - W_DATA_ISLAND - W_PREAMBLE - W_GUARDBAND) / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[4], &dma_cfg[i], i == 1 ? sym_preamble_to_video1 : sym_preamble_to_video2, W_PREAMBLE / DVI_SYMBOLS_PER_WORD, 2, false);
+			_set_data_cb(&cblist[5], &dma_cfg[i], &video_gaurdband_syms[i], W_GUARDBAND / DVI_SYMBOLS_PER_WORD, 2, false);
+			active_block = 6;
+		}
+
+		if (tmdsbuf) {
+			// Non-repeating DMA for the freshly-encoded TMDS buffer
+			_set_data_cb(&cblist[active_block], &dma_cfg[i], tmdsbuf + i * (t->h_active_pixels / DVI_SYMBOLS_PER_WORD),
+						 t->h_active_pixels / DVI_SYMBOLS_PER_WORD, 0, false);
+		} else {
+			// Use read ring to repeat the correct DC-balanced symbol pair on blank scanlines (4 or 8 byte period)
+			_set_data_cb(&cblist[active_block], &dma_cfg[i], &(black ? black_scanline_tmds : empty_scanline_tmds)[2 * i / DVI_SYMBOLS_PER_WORD],
+						 t->h_active_pixels / DVI_SYMBOLS_PER_WORD, DVI_SYMBOLS_PER_WORD == 2 ? 2 : 3, false);
+		}
 	}
 }
 
+const int dvi_lane_options[2][2] = {{1, 3}, {6, 5}};
+void __dvi_func(dvi_update_scanline_data_dma)(const struct dvi_timing *t, const uint32_t *tmdsbuf, struct dvi_scanline_dma_list *l, bool audio) {
+	const int *dvi_lane_option = dvi_lane_options[audio];
+#if DVI_MONOCHROME_TMDS
+		const uint32_t *lane_tmdsbuf = tmdsbuf;
+#else
+		const uint32_t *lane_tmdsbuf = tmdsbuf + TMDS_SYNC_LANE * t->h_active_pixels / DVI_SYMBOLS_PER_WORD;
+#endif
+    dvi_lane_from_list(l, TMDS_SYNC_LANE)[dvi_lane_option[1]].read_addr = lane_tmdsbuf;
+    for (int i = 1; i < N_TMDS_LANES; ++i) {
+#if !DVI_MONOCHROME_TMDS
+        lane_tmdsbuf = tmdsbuf + i * t->h_active_pixels / DVI_SYMBOLS_PER_WORD;
+#endif
+        dvi_lane_from_list(l, i)[dvi_lane_option[0]].read_addr = lane_tmdsbuf;
+	}
+}
+
+uint32_t dvi_timing_get_pixels_per_frame(const struct dvi_timing *t) {
+    uint32_t w = dvi_timing_get_pixels_per_line(t);
+    uint32_t h = t->v_front_porch + t->v_sync_width + t->v_back_porch + t->v_active_lines;
+    return w * h;
+}
+
+uint32_t dvi_timing_get_pixels_per_line(const struct dvi_timing *t) {
+    return t->h_front_porch + t->h_sync_width + t->h_back_porch + t->h_active_pixels;
+}
