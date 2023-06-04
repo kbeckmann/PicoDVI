@@ -3,7 +3,11 @@
 # add_definitions(-DRUN_FROM_CRYSTAL)
 
 add_executable(n64
+	config.c
+	gfx.c
+	joybus.c
 	main.c
+	osd.c
 )
 
 target_compile_definitions(n64 PRIVATE
@@ -20,6 +24,7 @@ target_link_libraries(n64
 )
 
 # Build pio
+pico_generate_pio_header(n64 ${CMAKE_CURRENT_LIST_DIR}/joybus.pio)
 pico_generate_pio_header(n64 ${CMAKE_CURRENT_LIST_DIR}/n64.pio)
 
 

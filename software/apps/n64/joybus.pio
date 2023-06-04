@@ -1,0 +1,107 @@
+;
+; Copyright (c) 2023 Polprzewodnikowy / Mateusz Faderewski
+; Copyright (c) 2023 Konrad Beckmann
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+
+.program joybus
+
+; Video
+; Data is stable on Negedge of CLK
+; 0-6 = data
+; 7   = dsync
+; 8   = clk
+
+; Audio (pinout matches the drawing in the repo)
+;  9 = LRCLK
+; 10 = SDAT
+; 11 = BCLK
+
+; Joybus RX
+; 20 = P1 Data (from PIF)
+
+; ----------------------------------------------------------
+; Joybus RX data sampling
+; Based on: https://github.com/Polprzewodnikowy/PicoJoybus/blob/main/src/joybus.pio
+; Original author: Polprzewodnikowy / Mateusz Faderewski
+; Modified to support both command and response, and filter on command = 0x01.
+; ----------------------------------------------------------
+
+
+rx_stop:
+public joybus_rx_good_data:
+    push
+public joybus_rx_start:
+    wait 1 pin 0
+    wait 0 pin 0
+    mov isr, null
+    set x, 7 [13]
+rx_bit_loop:
+    in pins, 1               ; t=16
+    jmp !x rx_data [8]       ; t=17 Done with reading one full byte
+    nop [8]                  ; t=26
+    jmp pin joybus_rx_start  ; t=35 hm what does this do
+    jmp x-- rx_bit_loop [12] ; t=36
+rx_data:
+    jmp pin check_command
+rx_bad_data:
+    jmp joybus_rx_start
+
+check_command:
+    mov x, isr
+    ; set y, 1               ; This is done by C-code during init
+    jmp x!=y joybus_rx_start ; if isr != 0x01, goto joybus_rx_start
+    
+    ; Don't even send the command, we always know we will get the payload
+    ;mov isr, ~isr            ; Set ISR = 0xFFFFFFFE as a magic.
+                             ; This is much less likely to show up in they payload than 0x00000001
+    ;push
+
+    ; Skip the console stop bit
+    wait 0 pin 0
+    wait 1 pin 0
+
+    ; Simplified version of the code above.
+    ; Assume that we always will get 32 bits, don't care about error cases.
+
+    wait 0 pin 0
+    mov isr, null
+    set x, 31 [13]
+rx_bit_loop2:
+    in pins, 1
+    jmp !x joybus_rx_good_data [8]
+    nop [8]
+public joybus_rx_wrap:
+    jmp x-- rx_bit_loop2 [12]
+
+
+
+% c-sdk {
+
+#include <hardware/clocks.h>
+
+void joybus_rx_program_init(PIO pio, uint sm, uint offset, uint pin)
+{
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + joybus_offset_joybus_rx_good_data, offset + joybus_offset_joybus_rx_wrap);
+
+    sm_config_set_in_pins(&c, pin);
+    sm_config_set_jmp_pin(&c, pin);
+
+    sm_config_set_in_shift(&c, false, false, 32);
+
+    float div = ((float) (clock_get_hz(clk_sys))) / (32 * 250000);
+    sm_config_set_clkdiv(&c, div);
+
+    gpio_pull_up(pin);
+    pio_gpio_init(pio, pin);
+
+    pio_sm_init(pio, sm, offset + joybus_offset_joybus_rx_start, &c);
+
+    // Set y=1
+    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 1));
+
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

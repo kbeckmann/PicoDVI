@@ -6,6 +6,10 @@ typedef struct audio_sample {
     int16_t channels[2];
 } audio_sample_t;
 
+typedef struct audio_sample_u {
+    uint16_t channels[2];
+} audio_sample_u_t;
+
 typedef struct audio_ring {
     audio_sample_t    *buffer;
     uint32_t          size;

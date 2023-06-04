@@ -1,67 +1,180 @@
 ;
-; Copyright (c) 2022 Konrad Beckmann
+; Copyright (c) 2022-2023 Konrad Beckmann
 ;
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
 
 .program n64
 
+; Video
+; Data is stable on Negedge of CLK
 ; 0-6 = data
 ; 7   = dsync
 ; 8   = clk
 
-; Data is stable on Negedge of CLK
+; Audio (pinout matches the drawing in the repo)
+;  9 = LRCLK
+; 10 = SDAT
+; 11 = BCLK
 
-n64_start:
+; Joybus RX
+; 20 = P1 Data (from PIF)
 
-    ; Change IO dir of all pins to INPUT
-    ; mov osr, null
-    ; out pindirs, 32
+; ----------------------------------------------------------
+; Video data sampling
+; ----------------------------------------------------------
 
+public n64_video_start:
 .wrap_target
-
-wait_for_dsyncn:
 
     ; Wait for high CLK
     wait 1 pin 8
+
+    ; Sample 4 bytes in total
+    set x, 2
 
     ; Wait for low CLK
     wait 0 pin 8
 
-    ; if DSYNC: goto wait_for_dsyncn
-    jmp pin wait_for_dsyncn
+    ; if DSYNC: goto n64_video_start
+    jmp pin n64_video_start
 
-    ; DSYNC = 0
+    ; DSYNC == 0
 
-    ; Sample into SYNC
-    in pins, 8 ; SYNC
+    ; Sample first byte if data + dsyncn
+    in pins, 8
+
+n64_video_capture_loop:
+
     ; Wait for high CLK
     wait 1 pin 8
-
     ; Wait for low CLK
-    wait 0 pin 8 
-    in pins, 8 ; R
-    ; Wait for high CLK
-    wait 1 pin 8
+    wait 0 pin 8
 
-    ; Wait for low CLK
-    wait 0 pin 8 
-    in pins, 8 ; G
-    ; Wait for high CLK
-    wait 1 pin 8
+    ; Sample data + dsyncn
+    in pins, 8
 
-    ; Wait for low CLK
-    wait 0 pin 8 
-    in pins, 8 ; B
+    jmp x-- n64_video_capture_loop
 
-    push
+    ; Auto-push is enabled, saves one instruction/cycle
+    ; push
 
-.wrap             ; Handle PI transactions forever!
+    ; Utilize wrap insead
+    ; jmp n64_video_start
+.wrap
+
+; ----------------------------------------------------------
+; Audio data sampling
+; ----------------------------------------------------------
+
+public n64_audio_start:
+public n64_audio_start_wrap:
+
+    ; TODO: This is outdated
+    ; Loop {
+    ;   Wait for rising edge of LRCLK (known initial state, recover from lost sync)
+    ;   Do {
+    ;     Iteration 1:
+    ;       LRCLK == 1 (Left channel)
+    ;       BCLK  == 1 or 0
+    ;       Skip the first bit (stray bit)
+    ;       Wait for BCLK == 0
+    ;       Set X = 15
+    ;       Wait for BCLK == 1
+    ;       Do {
+    ;         Wait for rising edge of BCLK
+    ;         Sample SDAT into ISR
+    ;       } While X--
+    ;       // ISR has 16 bits of sample data now
+    ;     Iteration 2:
+    ;       LRCLK == 1 (Left channel)
+    ;       BCLK  == 1
+    ;       Skip the first bit (stray bit)
+    ;       Wait for BCLK == 0
+    ;       LRCLK == 0 (Right channel now)
+    ;       Set X = 15
+    ;       Wait for BCLK == 1
+    ;       Do {
+    ;         Wait for rising edge of BCLK
+    ;         Sample SDAT into ISR
+    ;       } While X--
+    ;       // ISR has 32 bits of sample data now
+    ;   } While LRCLK == 1 // loop only once in practice - If not, endless loop, no push
+    ;   Push // By doing this manually, the ISR should be 2x16 bit words in order)
+    ; }
+
+    ; The following ensures that LRCLK is in sync.
+    ; This is okay to do when we loop as well,
+    ; since we just finished capturing the right channel.
+    ; Ensure that LRCLK = 1 (Left channel active)
+    wait 1 gpio 9
+
+    ; Clear the ISR to ensure we don't end up with unaligned data
+    mov isr, null
+
+    ; Ensure that LRCLK = 0 (Right channel active)
+    wait 0 gpio 9
+
+    ; This label is used when capturing the second word
+public n64_audio_capture_word:
+
+    ; Could use time to set variables etc.
+    ; Set x=15 (Sample 16 bits)
+    set x, 15
+
+    ; ------
+    ; Skip the first sample (17th stray bit of previous sample)
+    ; Wait for low BCLK
+    wait 0 gpio 11
+
+    ; Time between this step and the next can be a few microseconds, or a clock cycle.
+
+    ; Wait for high BCLK
+    wait 1 gpio 11
+    
+    ; At 48kHz samp. rate the time between this and the next low BCLK is extremely short (20-100 ns)
+ 
+    ; End of skip
+    ; ------
+
+n64_audio_left_capture_loop:
+    ; Wait for low BCLK
+    wait 0 gpio 11
+
+    ; Wait for high BCLK
+    wait 1 gpio 11
+
+    ; Sample a data bit
+    in pins, 1
+
+    jmp x-- n64_audio_left_capture_loop
+
+; ----------------------------------------------------------
+; Right channel has been captured. Capture right channel now.
+; ----------------------------------------------------------
+
+    ; Iterate once more to capture the right channel.
+    ; To do this in one instruction without using x/y, let's use the LRCLK pin.
+    ; An added bonus is that we end up in an endless loop here without pushing.
+    ; This means that we will _not_ push junk data to the audio buffer, i.e.
+    ; there should not be any harsh noise in case of a random un-synced state.
+    ; We need to order the samples correctly so left ends up in the left channel etc.
+public n64_audio_wrap:
+    jmp pin n64_audio_start_wrap
+
+    ; jmp n64_audio_capture_word
+
+; ----------------------------------------------------------
+; Left channel has been captured.
+; ----------------------------------------------------------
+
+
 
 
 % c-sdk {
-void n64_program_init(PIO pio, uint sm, uint offset) {
 
+void n64_video_program_init(PIO pio, uint sm, uint offset)
+{
     // gpio0 -> 8 input
     for (int i = 0; i <= 8; i++) {
         pio_gpio_init(pio, i);
@@ -72,7 +185,8 @@ void n64_program_init(PIO pio, uint sm, uint offset) {
     // Double the FIFO depth
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-    sm_config_set_out_shift(&c, true, false, 32);
+    // Enable auto-push
+    sm_config_set_in_shift(&c, true, true, 32);
 
     // GPIO0 -> GPIO8 as in pins
     sm_config_set_in_pins(&c, 0);
@@ -82,4 +196,31 @@ void n64_program_init(PIO pio, uint sm, uint offset) {
 
     pio_sm_init(pio, sm, offset, &c);
 }
+
+void n64_audio_program_init(PIO pio, uint sm, uint offset)
+{
+    // gpio9 -> 11 input
+    for (int i = 9; i <= 11; i++) {
+        pio_gpio_init(pio, i);
+    }
+
+    // Configure wrap/wrap_target for the audio program
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + n64_offset_n64_audio_capture_word, offset + n64_offset_n64_audio_wrap);
+
+    // Double the FIFO depth
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+    // MSB first / shift left, enable autopush
+    sm_config_set_in_shift(&c, false, true, 32);
+
+    // SDAT/GPIO10 as in start pin
+    sm_config_set_in_pins(&c, 10);
+
+    // JMP pin = LRCLK
+    sm_config_set_jmp_pin(&c, 9);
+
+    pio_sm_init(pio, sm, offset + n64_offset_n64_audio_start, &c);
+}
+
 %}

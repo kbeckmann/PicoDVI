@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - n64
+      - n64-audio
       - ci
 
 env:

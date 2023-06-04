@@ -64,6 +64,11 @@ struct dvi_inst {
     bool scanline_is_enabled;
     data_island_stream_t next_data_stream;
     audio_ring_t  audio_ring;
+    int dma_chan_a;
+    audio_sample_t *dma_buf_a;
+    int dma_chan_b;
+    audio_sample_t *dma_buf_b;
+    int dma_size;
 
     int left_audio_sample_count;
     int audio_sample_pos;
@@ -110,7 +115,9 @@ void dvi_audio_init(struct dvi_inst *inst);
 void dvi_enable_data_island(struct dvi_inst *inst);
 void dvi_update_data_island_ptr(struct dvi_scanline_dma_list *dma_list, data_island_stream_t *stream);
 void dvi_audio_sample_buffer_set(struct dvi_inst *inst, audio_sample_t *buffer, int size);
+void dvi_audio_sample_dma_set_chan(struct dvi_inst *inst, int chan_a, audio_sample_t *buf_a, int chan_b, audio_sample_t *buf_b, int size);
 void dvi_set_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n);
+void dvi_update_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n);
 bool dvi_update_data_packet_(struct dvi_inst *inst, data_packet_t *packet);
 void inline dvi_update_data_packet(struct dvi_inst *inst) {
     data_packet_t packet;

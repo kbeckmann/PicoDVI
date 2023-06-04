@@ -273,7 +273,20 @@ void set_audio_info_frame(data_packet_t *data_packet, int freq) {
     const int cc = 1; // 2ch
     const int ct = 1; // IEC 60958 PCM
     const int ss = 1; // 16bit
-    const int sf = freq == 48000 ? 3 : (freq == 44100 ? 2 : 0);
+
+    int sf;
+    switch (freq) {
+    case  32000: sf = 1; break;
+    case  44100: sf = 2; break;
+    case  48000: sf = 3; break;
+    case  88200: sf = 4; break;
+    case  96000: sf = 5; break;
+    case 176400: sf = 6; break;
+    case 192000: sf = 7; break;
+    default:
+        sf = 0; // Refer to Stream Header
+    }
+
     const int ca = 0;  // FR, FL
     const int lsv = 0; // 0db
     const int dm_inh = 0;
