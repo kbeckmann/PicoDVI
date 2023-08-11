@@ -3,6 +3,8 @@
 #pragma GCC optimize("O3")
 
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -21,17 +23,8 @@
 #include "joybus.pio.h"
 #include "n64.pio.h"
 
-
-// Uncomment to print diagnostic data on the screen
-// #define DIAGNOSTICS
-// #define DIAGNOSTICS_JOYBUS
-
-// Font
-#include "font_8x8.h"
-#define FONT_CHAR_WIDTH 8
-#define FONT_CHAR_HEIGHT 8
-#define FONT_N_CHARS 95
-#define FONT_FIRST_ASCII 32
+#include "gfx.h"
+#include "osd.h"
 
 // Pinout reference
 #define PIN_VIDEO_D0     0
@@ -49,37 +42,8 @@
 #define PIN_JOYBUS_P1   20
 
 // Crop configuration for PAL vs NTSC
-#define DEFAULT_CROP_X_PAL  (36)
-#define DEFAULT_CROP_X_NTSC (14)
-#define DEFAULT_CROP_Y_PAL  (90)
-#define DEFAULT_CROP_Y_NTSC (25)
-#define ROWS_PAL            (615)
-#define ROWS_NTSC           (511)
-#define ROWS_TOLERANCE      (5)
 #define IN_RANGE(__x, __low, __high) (((__x) >= (__low)) && ((__x) <= (__high)))
 #define IN_TOLERANCE(__x, __value, __tolerance) IN_RANGE(__x, (__value - __tolerance), (__value + __tolerance))
-
-// TMDS bit clock 252 MHz
-// DVDD 1.2V (1.1V seems ok too)
-#define FRAME_WIDTH 320
-#define FRAME_HEIGHT 240
-#define VREG_VSEL VREG_VOLTAGE_1_20
-#define DVI_TIMING dvi_timing_640x480p_60hz
-
-// UART config on the last GPIOs
-#define UART_TX_PIN (28)
-#define UART_RX_PIN (29) /* not available on the pico */
-#define UART_ID     uart0
-#define BAUD_RATE   115200
-
-#define USE_RGB555
-
-#define RGB888_TO_RGB565(_r, _g, _b) \
-    (                                \
-        (((_r) & 0xf8) <<  8) |      \
-        (((_g) & 0xfc) <<  3) |      \
-        (((_b))        >>  3)        \
-    )
 
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
 
@@ -90,11 +54,16 @@ const PIO pio = (DVI_DEFAULT_SERIAL_CONFIG.pio == pio0) ? pio1 : pio0;
 const uint sm_video = 0;
 const uint sm_audio = 1;
 struct dvi_inst dvi0;
-uint16_t framebuf[FRAME_WIDTH * FRAME_HEIGHT];
 
 // __no_inline_not_in_flash_func
 // __time_critical_func
 // __not_in_flash_func
+
+
+//Audio Related
+audio_sample_t      audio_buffer_a[AUDIO_BUFFER_SIZE];
+audio_sample_t      audio_buffer_b[AUDIO_BUFFER_SIZE];
+
 
 void core1_main(void)
 {
@@ -112,52 +81,10 @@ void core1_scanline_callback(uint)
         ;
     // Note first two scanlines are pushed before DVI start
     static uint scanline = 2;
-    bufptr = &framebuf[FRAME_WIDTH * scanline];
+    bufptr = &g_framebuf[FRAME_WIDTH * scanline];
     queue_add_blocking_u32(&dvi0.q_colour_valid, &bufptr);
     scanline = (scanline + 1) % FRAME_HEIGHT;
 }
-
-static inline void putpixel(uint x, uint y, uint16_t rgb)
-{
-    uint idx = x + y * FRAME_WIDTH;
-    framebuf[idx] = rgb;
-}
-
-void puttext(uint x0, uint y0, uint bgcol, uint fgcol, const char *text)
-{
-    for (int y = y0; y < y0 + 8; ++y) {
-        uint xbase = x0;
-        const char *ptr = text;
-        char c;
-        while ((c = *ptr++)) {
-            uint8_t font_bits = font_8x8[(c - FONT_FIRST_ASCII) + (y - y0) * FONT_N_CHARS];
-            for (int i = 0; i < 8; ++i)
-                putpixel(xbase + i, y, font_bits & (1u << i) ? fgcol : bgcol);
-            xbase += 8;
-        }
-    }
-}
-
-void puttextf(uint x0, uint y0, uint bgcol, uint fgcol, const char *fmt, ...)
-{
-    char buf[128];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, 128, fmt, args);
-    puttext(x0, y0, bgcol, fgcol, buf);
-    va_end(args);
-}
-
-
-
-//Audio Related
-#define AUDIO_BUFFER_SIZE   (256 * 32)
-audio_sample_t      audio_buffer_a[AUDIO_BUFFER_SIZE];
-audio_sample_t      audio_buffer_b[AUDIO_BUFFER_SIZE];
-
-
-
-
 
 int main(void)
 {
@@ -175,23 +102,24 @@ int main(void)
 
     printf("Configuring DVI\n");
 
+    gfx_init();
     dvi0.timing = &DVI_TIMING;
     dvi0.ser_cfg = DVI_DEFAULT_SERIAL_CONFIG;
     dvi0.scanline_callback = core1_scanline_callback;
     dvi_init(&dvi0, next_striped_spin_lock_num(), next_striped_spin_lock_num());
 
-    // Once we've given core 1 the framebuffer, it will just keep on displaying
+    // Once we've given core 1 the g_framebuffer, it will just keep on displaying
     // it without any intervention from core 0
 
 #ifdef DIAGNOSTICS
     // Fill with red
-    sprite_fill16(framebuf, RGB888_TO_RGB565(0xFF, 0x00, 0x00), FRAME_WIDTH * FRAME_HEIGHT);
+    sprite_fill16(g_framebuf, RGB888_TO_RGB565(0xFF, 0x00, 0x00), FRAME_WIDTH * FRAME_HEIGHT);
 #else
     // Fill with black
-    sprite_fill16(framebuf, RGB888_TO_RGB565(0x00, 0x00, 0x00), FRAME_WIDTH * FRAME_HEIGHT);
+    sprite_fill16(g_framebuf, RGB888_TO_RGB565(0x00, 0x00, 0x00), FRAME_WIDTH * FRAME_HEIGHT);
 #endif
 
-    uint16_t *bufptr = framebuf;
+    uint16_t *bufptr = g_framebuf;
     queue_add_blocking_u32(&dvi0.q_colour_valid, &bufptr);
     bufptr += FRAME_WIDTH;
     queue_add_blocking_u32(&dvi0.q_colour_valid, &bufptr);
@@ -328,8 +256,8 @@ int main(void)
     uint32_t transfer = 0;
     uint32_t y = 0;
 
-    puttextf(0, y++ * 8, 0xffff, 0x0000, "hello");
-    puttextf(0, y++ * 8, 0xffff, 0x0000, "offset_joybus = %d", offset_joybus);
+    gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "hello");
+    gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "offset_joybus = %d", offset_joybus);
 
     while (true) {
 
@@ -342,7 +270,7 @@ int main(void)
 
         transfer++;
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: %08X %08X %08X %08X",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: %08X %08X %08X %08X",
             transfer % 100, 
             value[0],
             value[1], value[2], value[3]);
@@ -359,37 +287,37 @@ int main(void)
         y = 0;
         transfer++;
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: A=%d B=%d Z=%d Start=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: A=%d B=%d Z=%d Start=%d",
             transfer, 
             !!A_BUTTON(value), 
             !!B_BUTTON(value), 
             !!Z_BUTTON(value), 
             !!START_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: DU=%d DD=%d DL=%d DR=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: DU=%d DD=%d DL=%d DR=%d",
             transfer, 
             !!DU_BUTTON(value), 
             !!DD_BUTTON(value), 
             !!DL_BUTTON(value), 
             !!DR_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: Reset=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: Reset=%d",
             transfer, 
             !!RESET_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: TL=%d TR=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: TL=%d TR=%d",
             transfer, 
             !!TL_BUTTON(value), 
             !!TR_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: CU=%d CD=%d CL=%d CR=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: CU=%d CD=%d CL=%d CR=%d",
             transfer, 
             !!CU_BUTTON(value), 
             !!CD_BUTTON(value), 
             !!CL_BUTTON(value), 
             !!CR_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: X=%04d Y=%04d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: X=%04d Y=%04d",
             transfer, 
             X_STICK(value), 
             Y_STICK(value));
@@ -443,6 +371,13 @@ int main(void)
     while (1) {
         // printf("START\n");
 
+        // Get Joybus state to decide if we should show the menu
+        uint32_t joybus_value = joybus_rx_get_latest(pio_joybus, sm_joybus);
+        if (OSD_SHORTCUT(joybus_value)) {
+
+        }
+
+
         // 1. Find posedge VSYNC
         do {
             BGRS = pio_sm_get_blocking(pio, sm_video);
@@ -456,7 +391,7 @@ int main(void)
             int skip_row = (
                 (row % 2 != 0) ||            // Skip every second line (TODO: Add blend option later)
                 (row < crop_y) ||            // crop_y, number of rows to skip vertically from the top
-                (active_row >= FRAME_HEIGHT) // Never attempt to write more rows than the framebuffer
+                (active_row >= FRAME_HEIGHT) // Never attempt to write more rows than the g_framebuffer
             );
 
             // 2. Find posedge HSYNC
@@ -502,7 +437,7 @@ int main(void)
             BGRS = pio_sm_get_blocking(pio, sm_video);
             do {
                 // 3.3 Convert to RGB565 or 555
-                framebuf[count++] = (
+                g_framebuf[count++] = (
 #if defined(USE_RGB565)
                     ((BGRS <<  1) & 0xf800) |
                     ((BGRS >> 12) & 0x07e0) |
@@ -557,10 +492,10 @@ end_of_line:
             uint32_t y = 0;
             t1 = *pGetTime;
 
-            puttextf(0, ++y * 8, 0xffff, 0x0000, "Delta %d", (t1 - t0));
-            puttextf(0, ++y * 8, 0xffff, 0x0000, "row %d", row);
-            puttextf(0, ++y * 8, 0xffff, 0x0000, "column %d", column);
-            puttextf(0, ++y * 8, 0xffff, 0x0000, "count %d", count);
+            gfx_puttextf(0, ++y * 8, 0xffff, 0x0000, "Delta %d", (t1 - t0));
+            gfx_puttextf(0, ++y * 8, 0xffff, 0x0000, "row %d", row);
+            gfx_puttextf(0, ++y * 8, 0xffff, 0x0000, "column %d", column);
+            gfx_puttextf(0, ++y * 8, 0xffff, 0x0000, "count %d", count);
 
 
             sleep_ms(2000);
@@ -579,7 +514,7 @@ end_of_line:
         }
 
         // Trigger DMA
-# if 1
+#if 1
         if (!dma_channel_is_busy(dma_chan_a)) {
             dma_channel_configure(dma_chan_a, &config_a,
                 audio_buffer_a,        // Destination pointer
@@ -591,44 +526,44 @@ end_of_line:
 #endif
 
 
-#if DIAGNOSTICS_JOYBUS
+#ifdef DIAGNOSTICS_JOYBUS
     {
         // Use helper functions to decode the last controller state
         uint32_t value = joybus_rx_get_latest(pio_joybus, sm_joybus);
 
         uint32_t y = 20;
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: A=%d B=%d Z=%d Start=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: A=%d B=%d Z=%d Start=%d",
             frame, 
             !!A_BUTTON(value), 
             !!B_BUTTON(value), 
             !!Z_BUTTON(value), 
             !!START_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: DU=%d DD=%d DL=%d DR=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: DU=%d DD=%d DL=%d DR=%d",
             frame, 
             !!DU_BUTTON(value), 
             !!DD_BUTTON(value), 
             !!DL_BUTTON(value), 
             !!DR_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: Reset=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: Reset=%d",
             frame, 
             !!RESET_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: TL=%d TR=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: TL=%d TR=%d",
             frame, 
             !!TL_BUTTON(value), 
             !!TR_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: CU=%d CD=%d CL=%d CR=%d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: CU=%d CD=%d CL=%d CR=%d",
             frame, 
             !!CU_BUTTON(value), 
             !!CD_BUTTON(value), 
             !!CL_BUTTON(value), 
             !!CR_BUTTON(value));
 
-        puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: X=%04d Y=%04d",
+        gfx_puttextf(0, y++ * 8, 0xffff, 0x0000, "%02d: X=%04d Y=%04d",
             frame, 
             X_STICK(value), 
             Y_STICK(value));

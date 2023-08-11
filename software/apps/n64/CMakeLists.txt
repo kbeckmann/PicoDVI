@@ -5,6 +5,8 @@
 add_executable(n64
 	joybus.c
 	main.c
+	gfx.c
+	osd.c
 )
 
 target_compile_definitions(n64 PRIVATE
