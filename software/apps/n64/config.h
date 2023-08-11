@@ -9,6 +9,9 @@
 #define ROWS_NTSC           (511)
 #define ROWS_TOLERANCE      (5)
 
+#define OSD_Y_OFFSET (3)
+#define OSD_X_OFFSET (5)
+
 // TMDS bit clock 252 MHz
 // DVDD 1.2V (1.1V seems ok too)
 #define VREG_VSEL VREG_VOLTAGE_1_20

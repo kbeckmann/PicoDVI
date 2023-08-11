@@ -3,8 +3,6 @@
 #include <stdint.h>
 #include "hardware/pio.h"
 
-uint32_t joybus_rx_get_latest(PIO pio_instance, uint sm_instance);
-
 // Pad buttons
 #define A_BUTTON(a)     ((a) & 0x80000000)
 #define B_BUTTON(a)     ((a) & 0x40000000)
@@ -32,3 +30,6 @@ uint32_t joybus_rx_get_latest(PIO pio_instance, uint sm_instance);
 
 #define X_STICK(a)      ((int8_t) (((a) & 0x0000FF00) >> 8) )
 #define Y_STICK(a)      ((int8_t) (((a) & 0x000000FF)     ) )
+
+uint32_t joybus_rx_init(PIO pio_instance, uint sm_instance);
+uint32_t joybus_rx_get_latest(void);

@@ -164,6 +164,9 @@ int main(void)
     joybus_rx_program_init(pio_joybus, sm_joybus, offset_joybus, PIN_JOYBUS_P1);
     pio_sm_set_enabled(pio_joybus, sm_joybus, true);
 
+    // TODO: Move all stuff into this function
+    joybus_rx_init(pio_joybus, sm_joybus);
+
     // set_write_offset(&dvi0.audio_ring, 0);
     // set_read_offset(&dvi0.audio_ring, (AUDIO_BUFFER_SIZE) / 2);
     // set_read_offset(&dvi0.audio_ring, 0);
@@ -282,7 +285,7 @@ int main(void)
 
 #else
         // Use helper functions to decode the last controller state
-        uint32_t value = joybus_rx_get_latest(pio_joybus, sm_joybus);
+        uint32_t value = joybus_rx_get_latest();
 
         y = 0;
         transfer++;
@@ -371,12 +374,8 @@ int main(void)
     while (1) {
         // printf("START\n");
 
-        // Get Joybus state to decide if we should show the menu
-        uint32_t joybus_value = joybus_rx_get_latest(pio_joybus, sm_joybus);
-        if (OSD_SHORTCUT(joybus_value)) {
-
-        }
-
+        // Let the OSD code run
+        osd_run();
 
         // 1. Find posedge VSYNC
         do {
@@ -529,7 +528,7 @@ end_of_line:
 #ifdef DIAGNOSTICS_JOYBUS
     {
         // Use helper functions to decode the last controller state
-        uint32_t value = joybus_rx_get_latest(pio_joybus, sm_joybus);
+        uint32_t value = joybus_rx_get_latest();
 
         uint32_t y = 20;
 

@@ -10,4 +10,4 @@
     DD_BUTTON(__keys__)    \
 )
 
-void osd_handle();
+void osd_run(void);
