@@ -8,7 +8,10 @@
 
 typedef enum item_type {
     ITEM_TYPE_TEXT = 0,
-    ITEM_TYPE_VALUE_U32,
+    ITEM_TYPE_VALUE_RW_U32,
+    ITEM_TYPE_VALUE_RW_I32,
+    ITEM_TYPE_VALUE_RO_U32,
+    ITEM_TYPE_VALUE_RO_I32,
     ITEM_TYPE_MENU,
     ITEM_TYPE_BACK,
     ITEM_TYPE_EXIT,
@@ -18,7 +21,8 @@ typedef struct menu_item {
     char *text;
     item_type_t type;
     union {
-        uint32_t value_u32;
+        uint32_t *value_u32;
+        int32_t *value_i32;
         void *value_ptr;
     } value;
 } menu_item_t;

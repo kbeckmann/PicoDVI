@@ -33,3 +33,14 @@
 // #define DIAGNOSTICS
 // #define DIAGNOSTICS_JOYBUS
 
+typedef struct config {
+
+} config_t;
+
+extern config_t g_config;
+
+// Loads configuration from flash into g_config
+void config_load(void);
+
+// Saves configuration from g_config to flash
+void config_save(void);
