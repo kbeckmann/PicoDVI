@@ -61,8 +61,10 @@ struct dvi_inst dvi0;
 
 
 //Audio Related
+#if AUDIO_ENABLED
 audio_sample_t      audio_buffer_a[AUDIO_BUFFER_SIZE];
-audio_sample_t      audio_buffer_b[AUDIO_BUFFER_SIZE];
+// audio_sample_t      audio_buffer_b[AUDIO_BUFFER_SIZE];
+#endif
 
 
 void core1_main(void)
@@ -224,12 +226,14 @@ int main(void)
     channel_config_set_irq_quiet(&config_a, true);
     channel_config_set_dreq(&config_a, pio_get_dreq(pio, sm_audio, false));
 
+#if AUDIO_ENABLED
     dma_channel_configure(dma_chan_a, &config_a,
         audio_buffer_a,        // Destination pointer
         &pio->rxf[sm_audio],      // Source pointer
         AUDIO_BUFFER_SIZE, // Number of transfers
         false                // not Start immediately
     );
+#endif
 
     // Chan B
     // dma_channel_config config_b = dma_channel_get_default_config(dma_chan_b);
@@ -247,9 +251,11 @@ int main(void)
     //     false                // Do not start immediately
     // );
 
+#if AUDIO_ENABLED
     // dvi_audio_sample_dma_set_chan(&dvi0, dma_chan_a, audio_buffer_a, dma_chan_b, audio_buffer_b, AUDIO_BUFFER_SIZE);
     dvi_audio_sample_dma_set_chan(&dvi0, dma_chan_a, audio_buffer_a, 0, 0, AUDIO_BUFFER_SIZE);
     // dvi_audio_sample_buffer_set(&dvi0, audio_buffer_a, AUDIO_BUFFER_SIZE);
+#endif
 
 
 #endif
@@ -513,7 +519,7 @@ end_of_line:
         }
 
         // Trigger DMA
-#if 1
+#if AUDIO_ENABLED
         if (!dma_channel_is_busy(dma_chan_a)) {
             dma_channel_configure(dma_chan_a, &config_a,
                 audio_buffer_a,        // Destination pointer

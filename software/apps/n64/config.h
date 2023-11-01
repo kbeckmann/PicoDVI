@@ -29,6 +29,9 @@
 #define USE_RGB555
 // #define USE_RGB565
 
+#define AUDIO_ENABLED 1
+// #define AUDIO_ENABLED 0
+
 // Uncomment to print diagnostic data on the screen
 // #define DIAGNOSTICS
 // #define DIAGNOSTICS_JOYBUS
