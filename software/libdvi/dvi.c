@@ -107,6 +107,7 @@ void dvi_unregister_irqs_this_core(struct dvi_inst *inst, uint irq_num) {
 static inline void __attribute__((always_inline)) _dvi_load_dma_op(const struct dvi_lane_dma_cfg dma_cfg[], struct dvi_scanline_dma_list *l) {
     for (int i = 0; i < N_TMDS_LANES; ++i) {
         dma_channel_config cfg = dma_channel_get_default_config(dma_cfg[i].chan_ctrl);
+        channel_config_set_ring(&cfg, false, 4); // 16-byte write wrap
         channel_config_set_ring(&cfg, true, 4); // 16-byte write wrap
         channel_config_set_read_increment(&cfg, true);
         channel_config_set_write_increment(&cfg, true);
@@ -381,6 +382,11 @@ void dvi_set_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n) {
     inst->samples_per_frame  = (uint64_t)(audio_freq) * nPixPerFrame / pixelClock;
     inst->samples_per_line16 = (uint64_t)(audio_freq) * nPixPerLine * 65536 / pixelClock;
     dvi_enable_data_island(inst);
+
+    printf("nPixPerFrame: %d\n", nPixPerFrame);
+    printf("nPixPerLine: %d\n", nPixPerLine);
+    printf("samples_per_frame: %d\n", inst->samples_per_frame);
+    printf("samples_per_line16: %d\n", inst->samples_per_line16);
 }
 
 void dvi_wait_for_valid_line(struct dvi_inst *inst) {

@@ -133,8 +133,9 @@ int main(void)
     // dvi_audio_sample_buffer_set(&dvi0, audio_buffer, AUDIO_BUFFER_SIZE);
     // void dvi_audio_sample_dma_set_chan(struct dvi_inst *inst, int chan_a, audio_sample_t *buf_a, int chan_b, audio_sample_t *buf_b, int size) {
     // dvi_set_audio_freq(&dvi0, 44100, 28000, 6272);
-    // dvi_set_audio_freq(&dvi0, 48000, 25200, 6144);
-    dvi_set_audio_freq(&dvi0, 32000, 25200, 4096);
+    dvi_set_audio_freq(&dvi0, 48000, 25200, 6144);
+    // dvi_set_audio_freq(&dvi0, 96000, 25200, 6144 * 2);
+    // dvi_set_audio_freq(&dvi0, 32000, 25200, 4096);
 
 
     printf("Core 1 start\n");
@@ -202,37 +203,97 @@ int main(void)
 #elif 1
 
 
-#if 0
+#if 1
     for (int i = 0; i < AUDIO_BUFFER_SIZE; i++) {
         audio_buffer_a[i].channels[0] = rand();
         audio_buffer_a[i].channels[1] = rand();
 
-        audio_buffer_b[i].channels[0] = rand();
-        audio_buffer_b[i].channels[1] = rand();
+        // audio_buffer_b[i].channels[0] = rand();
+        // audio_buffer_b[i].channels[1] = rand();
     }
 #endif
 
     // DMA
     uint dma_chan_a = dma_claim_unused_channel(true);
-    // uint dma_chan_b = dma_claim_unused_channel(true);
-    // uint dma_chan_b = dma_chan_a;
+    uint dma_chan_ctrl = dma_claim_unused_channel(true);
+    printf("DMA %d %d\n", dma_chan_a, dma_chan_ctrl);
 
     // Chan A
     dma_channel_config config_a = dma_channel_get_default_config(dma_chan_a);
     channel_config_set_read_increment(&config_a, false);
     channel_config_set_write_increment(&config_a, true);
     channel_config_set_transfer_data_size(&config_a, DMA_SIZE_32);
-    // channel_config_set_chain_to(&config_a, dma_chan_b);
+    channel_config_set_chain_to(&config_a, dma_chan_ctrl);
     channel_config_set_irq_quiet(&config_a, true);
+    // channel_config_set_high_priority(&config_a, true); // ehh
+
+#if 1
+    dma_timer_claim(0);
+    // dma_timer_set_fraction(0, 1, 2625); // 252 MHz -> 96kHz
+    dma_timer_set_fraction(0, 1, 5250); // 252 MHz -> 48kHz
+    channel_config_set_dreq(&config_a, DREQ_DMA_TIMER0);
+#else
     channel_config_set_dreq(&config_a, pio_get_dreq(pio, sm_audio, false));
+#endif
 
 #if AUDIO_ENABLED
+    const volatile void* ptr = &pio->rxf[sm_audio];
+    const volatile void* ptr2 = &audio_buffer_a[0];
+
+    // channel_config_set_ring(&config_a, true, AUDIO_BUFFER_SIZE_BITS + 1);
     dma_channel_configure(dma_chan_a, &config_a,
-        audio_buffer_a,        // Destination pointer
-        &pio->rxf[sm_audio],      // Source pointer
-        AUDIO_BUFFER_SIZE, // Number of transfers
-        false                // not Start immediately
+        audio_buffer_a,       // Destination pointer
+        ptr,  // Source pointer
+        AUDIO_BUFFER_SIZE,    // Sample one full buffer
+        false                  // Start immediately
     );
+
+// typedef struct dma_cb {
+// 	const void *read_addr;
+// 	void *write_addr;
+// 	uint32_t transfer_count;
+// 	dma_channel_config c;
+// } dma_cb_t;
+
+//     static dma_cb_t ctrl_values;
+//     ctrl_values.read_addr = ptr;
+//     ctrl_values.write_addr = audio_buffer_a;
+//     ctrl_values.transfer_count = AUDIO_BUFFER_SIZE;
+//     ctrl_values.c.ctrl = config_a.ctrl | 1;
+
+    // The control DMA triggers the data DMA continuously via ping-pong chain
+    dma_channel_config c_ctrl = dma_channel_get_default_config(dma_chan_ctrl);
+	// channel_config_set_ring(&c_ctrl, false, 4);
+	// channel_config_set_ring(&c_ctrl, true, 4);
+    channel_config_set_transfer_data_size(&c_ctrl, DMA_SIZE_32);    // RX FIFO address is 32 bits
+    channel_config_set_read_increment(&c_ctrl, false);              // Always read RX FIFO's address
+    channel_config_set_write_increment(&c_ctrl, false);             // Always write to data DMA's read-address trigger register
+    channel_config_set_irq_quiet(&c_ctrl, true);
+    // channel_config_set_high_priority(&c_ctrl, true); // ehh
+    dma_channel_configure(dma_chan_ctrl, &c_ctrl,
+        &dma_hw->ch[dma_chan_a].al2_write_addr_trig,  // Destination pointer is data DMA's read-address trigger register
+        &ptr2,               // Source pointer is the address of RX FIFO
+        1,                  // A single transfer is needed to restart data DMA
+        false               // Do not start immediately
+    );
+
+    dma_channel_start(dma_chan_ctrl);
+
+    // // Chan B
+    // dma_channel_config config_b = dma_channel_get_default_config(dma_chan_b);
+    // channel_config_set_read_increment(&config_b, false);
+    // channel_config_set_write_increment(&config_b, false);
+    // channel_config_set_transfer_data_size(&config_b, DMA_SIZE_32);
+    // channel_config_set_irq_quiet(&config_b, true);
+    // channel_config_set_chain_to(&config_a, dma_chan_a);
+
+    // dma_channel_configure(dma_chan_b, &config_b,
+    //     &dma_hw->ch[dma_chan_a].al3_read_addr_trig,  // Destination pointer
+    //     &ptr,      // Source pointer
+    //     1,                   // One word
+    //     false                // not Start immediately
+    // );
+
 #endif
 
     // Chan B
@@ -519,13 +580,15 @@ end_of_line:
         }
 
         // Trigger DMA
-#if AUDIO_ENABLED
+// #if AUDIO_ENABLED
+#if 0
         if (!dma_channel_is_busy(dma_chan_a)) {
             dma_channel_configure(dma_chan_a, &config_a,
-                audio_buffer_a,        // Destination pointer
-                &pio->rxf[sm_audio],      // Source pointer
+                audio_buffer_a,       // Destination pointer
+                &pio->rxf[sm_audio],  // Source pointer
+                // ~0,                   // Loop "forever"
                 AUDIO_BUFFER_SIZE, // Number of transfers
-                true                // not Start immediately
+                true                  // Start immediately
             );
         }
 #endif

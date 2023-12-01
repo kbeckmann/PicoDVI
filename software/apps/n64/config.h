@@ -23,7 +23,9 @@
 #define UART_ID     uart0
 #define BAUD_RATE   115200
 
-#define AUDIO_BUFFER_SIZE   (256 * 32)
+// #define AUDIO_BUFFER_SIZE   (256 * 32)
+#define AUDIO_BUFFER_SIZE_BITS 12
+#define AUDIO_BUFFER_SIZE (1 << AUDIO_BUFFER_SIZE_BITS)
 
 // RGB555 results in equal color depth for each color channel
 #define USE_RGB555
