@@ -109,28 +109,31 @@ public n64_audio_start_wrap:
     ; Ensure that LRCLK = 1 (Left channel active)
     wait 1 gpio 9
 
+    ; Clear the ISR to ensure we don't end up with unaligned data
     mov isr, null
 
     ; Ensure that LRCLK = 0 (Right channel active)
     wait 0 gpio 9
 
     ; This label is used when capturing the second word
-n64_audio_capture_word:
+public n64_audio_capture_word:
 
-    ; ------
-    ; Skip the first sample (17th stray bit of previous sample)
-    ; Wait for low BCLK
-    wait 1 gpio 11
-    wait 0 gpio 11
-
-    ; Time between this step and the next is a few microseconds.
     ; Could use time to set variables etc.
     ; Set x=15 (Sample 16 bits)
     set x, 15
 
+    ; ------
+    ; Skip the first sample (17th stray bit of previous sample)
+    ; Wait for low BCLK
+    wait 0 gpio 11
+
+    ; Time between this step and the next can be a few microseconds, or a clock cycle.
+
     ; Wait for high BCLK
     wait 1 gpio 11
-
+    
+    ; At 48kHz samp. rate the time between this and the next low BCLK is extremely short (20-100 ns)
+ 
     ; End of skip
     ; ------
 
@@ -156,10 +159,10 @@ n64_audio_left_capture_loop:
     ; This means that we will _not_ push junk data to the audio buffer, i.e.
     ; there should not be any harsh noise in case of a random un-synced state.
     ; We need to order the samples correctly so left ends up in the left channel etc.
-n64_audio_wrap:
+public n64_audio_wrap:
     jmp pin n64_audio_start_wrap
 
-    jmp n64_audio_capture_word
+    ; jmp n64_audio_capture_word
 
 ; ----------------------------------------------------------
 ; Left channel has been captured.
@@ -203,7 +206,7 @@ void n64_audio_program_init(PIO pio, uint sm, uint offset)
 
     // Configure wrap/wrap_target for the audio program
     pio_sm_config c = pio_get_default_sm_config();
-    //sm_config_set_wrap(&c, offset + n64_offset_n64_audio_capture_word, offset + n64_offset_n64_audio_wrap);
+    sm_config_set_wrap(&c, offset + n64_offset_n64_audio_capture_word, offset + n64_offset_n64_audio_wrap);
 
     // Double the FIFO depth
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
