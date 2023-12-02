@@ -172,6 +172,10 @@ n64_audio_left_capture_loop:
 
     ; Push the same once again
     in y, 32
+    push noblock
+
+    ; Push the same once again
+    in y, 32
 public n64_audio_wrap:
     push noblock
 
