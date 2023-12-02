@@ -68,7 +68,9 @@ n64_video_capture_loop:
 ; ----------------------------------------------------------
 
 public n64_audio_start:
+public n64_audio_start_wrap:
 
+    ; TODO: This is outdated
     ; Loop {
     ;   Wait for rising edge of LRCLK (known initial state, recover from lost sync)
     ;   Do {
@@ -104,14 +106,13 @@ public n64_audio_start:
     ; The following ensures that LRCLK is in sync.
     ; This is okay to do when we loop as well,
     ; since we just finished capturing the right channel.
-    ; Ensure that LRCLK = 0 (Right channel active)
-    wait 0 gpio 9
-
     ; Ensure that LRCLK = 1 (Left channel active)
     wait 1 gpio 9
 
+    mov isr, null
+
     ; Ensure that LRCLK = 0 (Right channel active)
-    ;wait 0 gpio 9
+    wait 0 gpio 9
 
     ; This label is used when capturing the second word
 n64_audio_capture_word:
@@ -119,6 +120,7 @@ n64_audio_capture_word:
     ; ------
     ; Skip the first sample (17th stray bit of previous sample)
     ; Wait for low BCLK
+    wait 1 gpio 11
     wait 0 gpio 11
 
     ; Time between this step and the next is a few microseconds.
@@ -145,7 +147,7 @@ n64_audio_left_capture_loop:
     jmp x-- n64_audio_left_capture_loop
 
 ; ----------------------------------------------------------
-; Left channel has been captured. Capture right channel now.
+; Right channel has been captured. Capture right channel now.
 ; ----------------------------------------------------------
 
     ; Iterate once more to capture the right channel.
@@ -153,36 +155,16 @@ n64_audio_left_capture_loop:
     ; An added bonus is that we end up in an endless loop here without pushing.
     ; This means that we will _not_ push junk data to the audio buffer, i.e.
     ; there should not be any harsh noise in case of a random un-synced state.
-    jmp pin n64_audio_capture_word
+    ; We need to order the samples correctly so left ends up in the left channel etc.
+n64_audio_wrap:
+    jmp pin n64_audio_start_wrap
+
+    jmp n64_audio_capture_word
 
 ; ----------------------------------------------------------
-; Right channel has been captured.
+; Left channel has been captured.
 ; ----------------------------------------------------------
 
-public n64_audio_wrap:
-    ; Auto-push is disabled in order to have better control over the ISR bit-alignment.
-    push noblock
-
-;     mov y, isr
-;     push noblock
-
-;     ; Push the same once again
-;     in y, 32
-;     push noblock
-
-;     ; Push the same once again
-;     in y, 32
-;     push noblock
-
-;     ; Push the same once again
-;     in y, 32
-; public n64_audio_wrap:
-;     push noblock
-
-
-
-    ; Loop forever utilizing a second wrap (can't use .wrap/.wrap_target a second time)
-    ; jmp n64_audio_start
 
 
 
@@ -221,13 +203,13 @@ void n64_audio_program_init(PIO pio, uint sm, uint offset)
 
     // Configure wrap/wrap_target for the audio program
     pio_sm_config c = pio_get_default_sm_config();
-    sm_config_set_wrap(&c, offset + n64_offset_n64_audio_start, offset + n64_offset_n64_audio_wrap);
+    //sm_config_set_wrap(&c, offset + n64_offset_n64_audio_capture_word, offset + n64_offset_n64_audio_wrap);
 
     // Double the FIFO depth
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-    // MSB first / shift left, disable autopush
-    sm_config_set_in_shift(&c, false, false, 32);
+    // MSB first / shift left, enable autopush
+    sm_config_set_in_shift(&c, false, true, 32);
 
     // SDAT/GPIO10 as in start pin
     sm_config_set_in_pins(&c, 10);
