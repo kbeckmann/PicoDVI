@@ -110,6 +110,9 @@ public n64_audio_start:
     ; Ensure that LRCLK = 1 (Left channel active)
     wait 1 gpio 9
 
+    ; Ensure that LRCLK = 0 (Right channel active)
+    ;wait 0 gpio 9
+
     ; This label is used when capturing the second word
 n64_audio_capture_word:
 
@@ -156,9 +159,23 @@ n64_audio_left_capture_loop:
 ; Right channel has been captured.
 ; ----------------------------------------------------------
 
-public n64_audio_wrap:
+;public n64_audio_wrap:
     ; Auto-push is disabled in order to have better control over the ISR bit-alignment.
-    push
+    ;push
+
+    mov y, isr
+    push noblock
+
+    ; Push the same once again
+    in y, 32
+    push noblock
+
+    ; Push the same once again
+    in y, 32
+public n64_audio_wrap:
+    push noblock
+
+
 
     ; Loop forever utilizing a second wrap (can't use .wrap/.wrap_target a second time)
     ; jmp n64_audio_start

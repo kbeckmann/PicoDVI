@@ -133,8 +133,8 @@ int main(void)
     // dvi_audio_sample_buffer_set(&dvi0, audio_buffer, AUDIO_BUFFER_SIZE);
     // void dvi_audio_sample_dma_set_chan(struct dvi_inst *inst, int chan_a, audio_sample_t *buf_a, int chan_b, audio_sample_t *buf_b, int size) {
     // dvi_set_audio_freq(&dvi0, 44100, 28000, 6272);
-    dvi_set_audio_freq(&dvi0, 48000, 25200, 6144);
-    // dvi_set_audio_freq(&dvi0, 96000, 25200, 6144 * 2);
+    // dvi_set_audio_freq(&dvi0, 48000, 25200, 6144);
+    dvi_set_audio_freq(&dvi0, 96000, 25200, 6144 * 2);
     // dvi_set_audio_freq(&dvi0, 32000, 25200, 4096);
 
 
@@ -146,7 +146,9 @@ int main(void)
     for (int i = PIN_VIDEO_D0; i <= PIN_AUDIO_BCLK; i++) {
         gpio_init(i);
         gpio_set_dir(i, GPIO_IN);
-        gpio_set_pulls(i, false, false);
+
+        // Enable weak internal pull downs to reduce noise when n64 is turned off
+        gpio_set_pulls(i, false, true);
     }
 
     gpio_init(PIN_JOYBUS_P1);
@@ -203,13 +205,29 @@ int main(void)
 #elif 1
 
 
-#if 1
+#if 0
     for (int i = 0; i < AUDIO_BUFFER_SIZE; i++) {
         audio_buffer_a[i].channels[0] = rand();
         audio_buffer_a[i].channels[1] = rand();
 
         // audio_buffer_b[i].channels[0] = rand();
         // audio_buffer_b[i].channels[1] = rand();
+    }
+#elif 0
+    // Generate sine
+    // #define SAMPLE_RATE 96000
+    #define SAMPLE_RATE 48000
+    #define FREQUENCY1 375
+    #define FREQUENCY2 (375 * 1.5)
+    #define M_PI 3.1415926535
+
+    for (int i = 0; i < AUDIO_BUFFER_SIZE; i++) {
+        double time = (double)i / SAMPLE_RATE;
+        int16_t sample1 = (int16_t)(16384.0 * sin(2.0 * M_PI * FREQUENCY1 * time));
+        int16_t sample2 = (int16_t)(16384.0 * sin(2.0 * M_PI * FREQUENCY2 * time));
+
+        audio_buffer_a[i].channels[0] = sample1;
+        audio_buffer_a[i].channels[1] = sample2;
     }
 #endif
 
@@ -225,12 +243,13 @@ int main(void)
     channel_config_set_transfer_data_size(&config_a, DMA_SIZE_32);
     channel_config_set_chain_to(&config_a, dma_chan_ctrl);
     channel_config_set_irq_quiet(&config_a, true);
-    // channel_config_set_high_priority(&config_a, true); // ehh
+    channel_config_set_high_priority(&config_a, true); // ehh
 
 #if 1
     dma_timer_claim(0);
-    // dma_timer_set_fraction(0, 1, 2625); // 252 MHz -> 96kHz
-    dma_timer_set_fraction(0, 1, 5250); // 252 MHz -> 48kHz
+    // dma_timer_set_fraction(0, 1, 2625/2); // 252 MHz -> 192kHz
+    dma_timer_set_fraction(0, 1, 2625); // 252 MHz -> 96kHz
+    // dma_timer_set_fraction(0, 1, 5250); // 252 MHz -> 48kHz
     channel_config_set_dreq(&config_a, DREQ_DMA_TIMER0);
 #else
     channel_config_set_dreq(&config_a, pio_get_dreq(pio, sm_audio, false));
@@ -269,7 +288,7 @@ int main(void)
     channel_config_set_read_increment(&c_ctrl, false);              // Always read RX FIFO's address
     channel_config_set_write_increment(&c_ctrl, false);             // Always write to data DMA's read-address trigger register
     channel_config_set_irq_quiet(&c_ctrl, true);
-    // channel_config_set_high_priority(&c_ctrl, true); // ehh
+    channel_config_set_high_priority(&c_ctrl, true); // ehh
     dma_channel_configure(dma_chan_ctrl, &c_ctrl,
         &dma_hw->ch[dma_chan_a].al2_write_addr_trig,  // Destination pointer is data DMA's read-address trigger register
         &ptr2,               // Source pointer is the address of RX FIFO
@@ -277,7 +296,37 @@ int main(void)
         false               // Do not start immediately
     );
 
+    for (int i = 0; i < 100; i++) {
+        // pio_sm_clear_fifos(pio, sm_audio);
+        pio_sm_get_blocking(pio, sm_audio);
+    }
+
+#if 1
     dma_channel_start(dma_chan_ctrl);
+#else
+
+    //remember to remove the chaining if using this
+
+    // Dump one full dma transfer
+    dma_channel_start(dma_chan_a);
+    dma_channel_wait_for_finish_blocking(dma_chan_a);
+    uint8_t *buf8 = (uint8_t *) audio_buffer_a;
+
+    printf("\n\n");
+    for (int i = 0; i < AUDIO_BUFFER_SIZE * 4; i++) {
+        printf("%02lx ", buf8[i]);
+    }
+    printf("\n\n");
+
+    while(1) {
+    }
+#endif
+
+    for (int i = 0; i < 100; i++) {
+        // pio_sm_clear_fifos(pio, sm_audio);
+        pio_sm_get_blocking(pio, sm_audio);
+    }
+
 
     // // Chan B
     // dma_channel_config config_b = dma_channel_get_default_config(dma_chan_b);
@@ -313,9 +362,12 @@ int main(void)
     // );
 
 #if AUDIO_ENABLED
-    // dvi_audio_sample_dma_set_chan(&dvi0, dma_chan_a, audio_buffer_a, dma_chan_b, audio_buffer_b, AUDIO_BUFFER_SIZE);
+
+    // Write from the beginning of the buffer, read from the middle
+    set_read_offset(&dvi0.audio_ring, (AUDIO_BUFFER_SIZE) / 2);
+
+    // Let the dvi code know which dma channel we use so it can query the write pointer
     dvi_audio_sample_dma_set_chan(&dvi0, dma_chan_a, audio_buffer_a, 0, 0, AUDIO_BUFFER_SIZE);
-    // dvi_audio_sample_buffer_set(&dvi0, audio_buffer_a, AUDIO_BUFFER_SIZE);
 #endif
 
 
@@ -578,21 +630,6 @@ end_of_line:
             crop_x = DEFAULT_CROP_X_NTSC;
             crop_y = DEFAULT_CROP_Y_NTSC;
         }
-
-        // Trigger DMA
-// #if AUDIO_ENABLED
-#if 0
-        if (!dma_channel_is_busy(dma_chan_a)) {
-            dma_channel_configure(dma_chan_a, &config_a,
-                audio_buffer_a,       // Destination pointer
-                &pio->rxf[sm_audio],  // Source pointer
-                // ~0,                   // Loop "forever"
-                AUDIO_BUFFER_SIZE, // Number of transfers
-                true                  // Start immediately
-            );
-        }
-#endif
-
 
 #ifdef DIAGNOSTICS_JOYBUS
     {

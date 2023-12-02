@@ -423,11 +423,41 @@ bool __dvi_func(dvi_update_data_packet_)(struct dvi_inst *inst, data_packet_t *p
         // audio_ring_set(&inst->audio_ring, inst->dma_buf_a, inst->dma_size);
         inst->audio_ring.buffer = inst->dma_buf_a;
         inst->audio_ring.size   = inst->dma_size;
+        // Set the write pointer to where the DMA is actively writing to
+        inst->audio_ring.write  = (((uint32_t) dma_hw->ch[inst->dma_chan_a].write_addr) - ((uint32_t) inst->dma_buf_a)) / 4;
 
-        int read_size = inst->dma_size;
+        // Utilize the get_read_size to calculate how many words we can read (should always be 4 in practice)
+        int read_size = get_read_size(&inst->audio_ring, inst->audio_ring.write == 0);
+        // int read_size = 4;
         int n = MAX(0, MIN(4, MIN(sample_pos_16, read_size)));
         inst->audio_sample_pos -= n << 16;
         if (n) {
+
+
+
+// Ugly but effective logging
+// We want to make sure that the gap between read and write is large. Ideally it should be constant since producer and consumer should be running at the same speed.
+#if 0
+            static int cnt;
+            static uint16_t log[8192][2];
+            static int log_i;
+            cnt++;
+            // if ((cnt % 1000 == 0) && (log_i < 1024)){
+            // int delta = abs(inst->audio_ring.read - inst->audio_ring.write);
+            // if (delta < 100 && (log_i < 8192)){
+            if (log_i < 8192){
+                log_i++;
+                log[log_i][0] = inst->audio_ring.read;
+                log[log_i][1] = inst->audio_ring.write;
+            }
+            if (log_i == 8192) {
+                log_i++;
+                for (int i = 0; i < 8192; i++) {
+                    printf("%d: d=%04d w=%4d r=%04d\n", i, abs(log[i][0] - log[i][1]), log[i][0], log[i][1]);
+                }
+            }
+#endif
+
             audio_sample_t *audio_sample_ptr = get_read_pointer(&inst->audio_ring);
             inst->audio_frame_count = set_audio_sample(packet, audio_sample_ptr, n, inst->audio_frame_count);
             increase_read_pointer(&inst->audio_ring, n);
