@@ -159,25 +159,25 @@ n64_audio_left_capture_loop:
 ; Right channel has been captured.
 ; ----------------------------------------------------------
 
-;public n64_audio_wrap:
-    ; Auto-push is disabled in order to have better control over the ISR bit-alignment.
-    ;push
-
-    mov y, isr
-    push noblock
-
-    ; Push the same once again
-    in y, 32
-    push noblock
-
-    ; Push the same once again
-    in y, 32
-    push noblock
-
-    ; Push the same once again
-    in y, 32
 public n64_audio_wrap:
+    ; Auto-push is disabled in order to have better control over the ISR bit-alignment.
     push noblock
+
+;     mov y, isr
+;     push noblock
+
+;     ; Push the same once again
+;     in y, 32
+;     push noblock
+
+;     ; Push the same once again
+;     in y, 32
+;     push noblock
+
+;     ; Push the same once again
+;     in y, 32
+; public n64_audio_wrap:
+;     push noblock
 
 
 
