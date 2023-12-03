@@ -4,6 +4,7 @@ on:
     branches:
       - n64
       - n64-audio
+      - n64-audio-osd
       - ci
 
 env:
