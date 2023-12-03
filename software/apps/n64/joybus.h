@@ -1,3 +1,9 @@
+/**
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Copyright (c) 2023 Konrad Beckmann
+ */
+
 #pragma once
 
 #include <stdint.h>

@@ -1,3 +1,9 @@
+/**
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Copyright (c) 2023 Konrad Beckmann
+ */
+
 #pragma once
 
 #include <stdint.h>
@@ -40,6 +46,9 @@
 // #define DIAGNOSTICS
 // #define DIAGNOSTICS_JOYBUS
 
+#define CONFIG_MAGIC1 0x123456768
+#define CONFIG_MAGIC2 0xdeadf000d
+
 typedef enum dvi_color_mode {
     DVI_RGB_555 = 0,
     DVI_RGB_565,
@@ -47,8 +56,12 @@ typedef enum dvi_color_mode {
 } dvi_color_mode_t;
 
 typedef struct config {
+    uint32_t magic1;
+
     uint32_t audio_out_sample_rate;
     dvi_color_mode_t dvi_color_mode;
+
+    uint32_t magic2;
 } config_t;
 
 extern config_t g_config;
