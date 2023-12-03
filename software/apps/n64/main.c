@@ -161,12 +161,9 @@ int main(void)
 
     vreg_set_voltage(VREG_VSEL);
     sleep_ms(10);
-#ifdef RUN_FROM_CRYSTAL
-    set_sys_clock_khz(12000, true);
-#else
+
     // Run system at TMDS bit clock (252.000 MHz)
     set_sys_clock_khz(DVI_TIMING.bit_clk_khz, true);
-#endif
 
     // setup_default_uart();
     stdio_uart_init_full(UART_ID, BAUD_RATE, UART_TX_PIN, UART_RX_PIN);
@@ -280,7 +277,6 @@ int main(void)
     channel_config_set_dreq(&c_audio_pio_data, pio_get_dreq(pio, sm_audio, false));
     channel_config_set_chain_to(&c_audio_pio_data, dma_ch_audio_pio_ctrl);
     channel_config_set_irq_quiet(&c_audio_pio_data, true);
-    // channel_config_set_high_priority(&c_audio_pio_data, true); // probably not needed
 
     const volatile void* ptr_audio_pio_rxf = &pio->rxf[sm_audio];
     dma_channel_configure(dma_ch_audio_pio_data, &c_audio_pio_data,
@@ -294,7 +290,6 @@ int main(void)
     dma_channel_config c_audio_pio_ctrl = dma_channel_get_default_config(dma_ch_audio_pio_ctrl);
     channel_config_set_read_increment(&c_audio_pio_ctrl, false);
     channel_config_set_irq_quiet(&c_audio_pio_ctrl, true);
-    // channel_config_set_high_priority(&c_audio_pio_ctrl, true); // probably not needed
     dma_channel_configure(dma_ch_audio_pio_ctrl, &c_audio_pio_ctrl,
         &dma_hw->ch[dma_ch_audio_pio_data].al3_read_addr_trig, // Write to data DMA's read-address trigger register
         &ptr_audio_pio_rxf, // Read from ptr to RX FIFO
@@ -317,7 +312,6 @@ int main(void)
     channel_config_set_transfer_data_size(&c_audio_buffer_data, DMA_SIZE_32);
     channel_config_set_chain_to(&c_audio_buffer_data, dma_ch_audio_buffer_ctrl);
     channel_config_set_irq_quiet(&c_audio_buffer_data, true);
-    // channel_config_set_high_priority(&c_audio_buffer_data, true); // probably not needed
 
     // Configure the DMA timer that pulls the latest sample at a constant frequency
     dma_timer_claim(0);
@@ -341,7 +335,6 @@ int main(void)
     channel_config_set_read_increment(&c_audio_buffer_ctrl, false); // Always read one word
     channel_config_set_write_increment(&c_audio_buffer_ctrl, false); // Always write to data DMA's read-address trigger register
     channel_config_set_irq_quiet(&c_audio_buffer_ctrl, true);
-    // channel_config_set_high_priority(&c_audio_buffer_ctrl, true); // ehh
     dma_channel_configure(dma_ch_audio_buffer_ctrl, &c_audio_buffer_ctrl,
         &dma_hw->ch[dma_ch_audio_buffer_data].al2_write_addr_trig,  // Destination pointer is data DMA's read-address trigger register
         &ptr2,               // Source pointer is the address of RX FIFO
@@ -354,7 +347,6 @@ int main(void)
 
     // Let the dvi code know which dma channel we use so it can query the write pointer
     dvi_audio_sample_dma_set_chan(&dvi0, dma_ch_audio_buffer_data, audio_buffer, 0, 0, AUDIO_BUFFER_SIZE);
-
 
 #ifdef DIAGNOSTICS_JOYBUS
 
