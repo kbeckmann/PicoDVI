@@ -1,11 +1,21 @@
+/**
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Copyright (c) 2023 Konrad Beckmann
+ */
+
 #include "config.h"
 #include <string.h>
 
 config_t g_config;
 
 static config_t default_config = {
+    .magic1 = CONFIG_MAGIC1,
+
     .audio_out_sample_rate = 96000,
     .dvi_color_mode = DVI_RGB_555,
+
+    .magic2 = CONFIG_MAGIC2,
 };
 
 void config_init(void)
@@ -18,7 +28,6 @@ void config_load(void)
     // TODO
 }
 
-// Saves configuration from g_config to flash
 void config_save(void)
 {
     // TODO
