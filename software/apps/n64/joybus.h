@@ -31,5 +31,5 @@
 #define X_STICK(a)      ((int8_t) (((a) & 0x0000FF00) >> 8) )
 #define Y_STICK(a)      ((int8_t) (((a) & 0x000000FF)     ) )
 
-uint32_t joybus_rx_init(PIO pio_instance, uint sm_instance);
+void joybus_rx_init(PIO pio_instance, uint sm_instance);
 uint32_t joybus_rx_get_latest(void);

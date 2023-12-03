@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 // Default crop parameters
 #define DEFAULT_CROP_X_PAL  (36)
 #define DEFAULT_CROP_X_NTSC (14)
@@ -38,11 +40,21 @@
 // #define DIAGNOSTICS
 // #define DIAGNOSTICS_JOYBUS
 
-typedef struct config {
+typedef enum dvi_color_mode {
+    DVI_RGB_555 = 0,
+    DVI_RGB_565,
+    DVI_RGB_888,
+} dvi_color_mode_t;
 
+typedef struct config {
+    uint32_t audio_out_sample_rate;
+    dvi_color_mode_t dvi_color_mode;
 } config_t;
 
 extern config_t g_config;
+
+// Initializes g_config with default values
+void config_init(void);
 
 // Loads configuration from flash into g_config
 void config_load(void);

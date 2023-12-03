@@ -6,7 +6,7 @@ static struct {
     uint32_t last_value;
 } state;
 
-uint32_t joybus_rx_init(PIO pio_instance, uint sm_instance)
+void joybus_rx_init(PIO pio_instance, uint sm_instance)
 {
     state.pio_instance = pio_instance;
     state.sm_instance = sm_instance;

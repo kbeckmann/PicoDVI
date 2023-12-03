@@ -26,8 +26,9 @@
 #include "gfx.h"
 #include "osd.h"
 
-// Enable to print debug stuff
-//#define DIAGNOSTICS
+// Enable to print debug/diagnostics
+// #define DIAGNOSTICS
+// #define DIAGNOSTICS_JOYBUS
 
 // Pinout reference
 #define PIN_VIDEO_D0     0
@@ -64,7 +65,6 @@ struct dvi_inst dvi0;
 
 audio_sample_t      last_audio_sample;
 audio_sample_t      audio_buffer[AUDIO_BUFFER_SIZE];
-uint32_t            audio_out_sample_rate = 96000;
 
 static void core1_main(void)
 {
@@ -156,6 +156,9 @@ static void set_audio_sampling_parameters(uint32_t samplerate)
 
 int main(void)
 {
+    config_init();
+    config_load();
+
     vreg_set_voltage(VREG_VSEL);
     sleep_ms(10);
 #ifdef RUN_FROM_CRYSTAL
@@ -196,7 +199,7 @@ int main(void)
     dvi_get_blank_settings(&dvi0)->top    = 4 * 0;
     dvi_get_blank_settings(&dvi0)->bottom = 4 * 0;
 
-    set_audio_dvi_parameters(audio_out_sample_rate, true);
+    set_audio_dvi_parameters(g_config.audio_out_sample_rate, true);
 
     printf("Core 1 start\n");
     multicore_launch_core1(core1_main);
@@ -319,7 +322,7 @@ int main(void)
     // Configure the DMA timer that pulls the latest sample at a constant frequency
     dma_timer_claim(0);
 
-    set_audio_sampling_parameters(audio_out_sample_rate);
+    set_audio_sampling_parameters(g_config.audio_out_sample_rate);
 
     channel_config_set_dreq(&c_audio_buffer_data, DREQ_DMA_TIMER0);
 
@@ -431,7 +434,6 @@ int main(void)
 #endif
 
 
-#if 1
     // Video
 
     int count = 0;
@@ -472,31 +474,6 @@ int main(void)
 
     while (1) {
         // printf("START\n");
-
-#if 0
-        if (frame % 100 == 0) {
-            static int mode = 0;
-            mode++;
-            switch (mode % 4) {
-            case 0:
-                audio_out_sample_rate = 32000;
-                break;
-            case 1:
-                audio_out_sample_rate = 44100;
-                break;
-            case 2:
-                audio_out_sample_rate = 48000;
-                break;
-            case 3:
-                audio_out_sample_rate = 96000;
-                break;
-            }
-            if (mode > 0) {
-                set_audio_dvi_parameters(audio_out_sample_rate, false);
-                set_audio_sampling_parameters(audio_out_sample_rate);
-            }
-        }
-#endif
 
         // Let the OSD code run
         osd_run();
@@ -558,53 +535,70 @@ int main(void)
 
             // 3.2 Capture active pixels
             BGRS = pio_sm_get_blocking(pio, sm_video);
-            do {
-                // 3.3 Convert to RGB565 or 555
-                g_framebuf[count++] = (
-#if defined(USE_RGB565)
-                    ((BGRS <<  1) & 0xf800) |
-                    ((BGRS >> 12) & 0x07e0) |
-                    ((BGRS >> 26) & 0x001f)
-                    // | 0x1f // Uncomment to tint everything with blue
-#elif defined(USE_RGB555)
-                    ((BGRS <<  1) & 0xf800) |
-                    ((BGRS >> 12) & 0x07c0) | // Mask so only 5 bits for green are used
-                    ((BGRS >> 26) & 0x001f)
-                    // | 0x1f // Uncomment to tint everything with blue
-#else
-#error Define USE_RGB565 or USE_RGB555
-#endif
-                );
 
-                // Never write more than the line width.
-                // Input might be weird and have too many active pixels - discard in those cases.
-                if (count >= count_max) {
-                    do {
-                        // Consume all active pixels
-                        BGRS = pio_sm_get_blocking(pio, sm_video);
-                    } while ((BGRS & ACTIVE_PIXEL_MASK) == ACTIVE_PIXEL_MASK);
-                    break;
-                }
+            // This code is duplucated for performance reasons - 555 and 565 respectively
 
-                // 3.4 Skip every second pixel
-                BGRS = pio_sm_get_blocking(pio, sm_video);
-                column++;
+            if (g_config.dvi_color_mode == DVI_RGB_555) {
+                do {
+                    // 3.3 Convert to RGB555
+                    g_framebuf[count++] = (
+                        ((BGRS <<  1) & 0xf800) |
+                        ((BGRS >> 12) & 0x07e0) |
+                        ((BGRS >> 26) & 0x001f)
+                        // | 0x1f // Uncomment to tint everything with blue
+                    );
 
-                // Skip one extra pixel, for debugging
-                // BGRS = pio_sm_get_blocking(pio, sm_video);
-                column++;
+                    // Never write more than the line width.
+                    // Input might be weird and have too many active pixels - discard in those cases.
+                    if (count >= count_max) {
+                        do {
+                            // Consume all active pixels
+                            BGRS = pio_sm_get_blocking(pio, sm_video);
+                        } while ((BGRS & ACTIVE_PIXEL_MASK) == ACTIVE_PIXEL_MASK);
+                        break;
+                    }
 
-                // Fetch new pixel in the end, so the loop logic can react to it first
-                BGRS = pio_sm_get_blocking(pio, sm_video);
+                    // 3.4 Skip every second pixel
+                    BGRS = pio_sm_get_blocking(pio, sm_video);
 
-#if 0
-                // Optional code to check for active pixels.
-                // Disabled for performance reasons.
-                if ((BGRS & ACTIVE_PIXEL_MASK) != ACTIVE_PIXEL_MASK) {
-                    break;
-                }
-#endif
-            } while (1);
+                    // 3.5 Count number of pixels processed on this row
+                    column += 2; // Fuse two increments into one instruction
+
+                    // Fetch new pixel in the end, so the loop logic can react to it first
+                    BGRS = pio_sm_get_blocking(pio, sm_video);
+                } while (1);
+            } else if (g_config.dvi_color_mode == DVI_RGB_565) {
+                do {
+                    // 3.3 Convert to RGB565
+                    g_framebuf[count++] = (
+                        ((BGRS <<  1) & 0xf800) |
+                        ((BGRS >> 12) & 0x07c0) | // Mask so only 5 bits for green are used
+                        ((BGRS >> 26) & 0x001f)
+                        // | 0x1f // Uncomment to tint everything with blue
+                    );
+
+                    // Never write more than the line width.
+                    // Input might be weird and have too many active pixels - discard in those cases.
+                    if (count >= count_max) {
+                        do {
+                            // Consume all active pixels
+                            BGRS = pio_sm_get_blocking(pio, sm_video);
+                        } while ((BGRS & ACTIVE_PIXEL_MASK) == ACTIVE_PIXEL_MASK);
+                        break;
+                    }
+
+                    // 3.4 Skip every second pixel
+                    BGRS = pio_sm_get_blocking(pio, sm_video);
+
+                    // 3.5 Count number of pixels processed on this row
+                    column += 2; // Fuse two increments into one instruction
+
+                    // Fetch new pixel in the end, so the loop logic can react to it first
+                    BGRS = pio_sm_get_blocking(pio, sm_video);
+                } while (1);
+            } else {
+                // Panic
+            }
         }
 
 end_of_line:
@@ -683,8 +677,6 @@ end_of_line:
 
         frame++;
     }
-
-#endif
 
     __builtin_unreachable();
 }

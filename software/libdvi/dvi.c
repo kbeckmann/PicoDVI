@@ -385,10 +385,10 @@ void dvi_set_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n) {
     inst->samples_per_line16 = (uint64_t)(audio_freq) * nPixPerLine * 65536 / pixelClock;
     dvi_enable_data_island(inst);
 
-    printf("nPixPerFrame: %d\n", nPixPerFrame);
-    printf("nPixPerLine: %d\n", nPixPerLine);
-    printf("samples_per_frame: %d\n", inst->samples_per_frame);
-    printf("samples_per_line16: %d\n", inst->samples_per_line16);
+    // printf("nPixPerFrame: %d\n", nPixPerFrame);
+    // printf("nPixPerLine: %d\n", nPixPerLine);
+    // printf("samples_per_frame: %d\n", inst->samples_per_frame);
+    // printf("samples_per_line16: %d\n", inst->samples_per_line16);
 }
 
 void dvi_update_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n) {

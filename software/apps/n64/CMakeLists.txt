@@ -3,9 +3,10 @@
 # add_definitions(-DRUN_FROM_CRYSTAL)
 
 add_executable(n64
+	config.c
+	gfx.c
 	joybus.c
 	main.c
-	gfx.c
 	osd.c
 )
 
