@@ -26,6 +26,9 @@
 #include "gfx.h"
 #include "osd.h"
 
+// Enable to print debug stuff
+//#define DIAGNOSTICS
+
 // Pinout reference
 #define PIN_VIDEO_D0     0
 #define PIN_VIDEO_D1     1
@@ -59,15 +62,11 @@ struct dvi_inst dvi0;
 // __time_critical_func
 // __not_in_flash_func
 
-
-//Audio Related
-#if AUDIO_ENABLED
 audio_sample_t      last_audio_sample;
 audio_sample_t      audio_buffer[AUDIO_BUFFER_SIZE];
-#endif
+uint32_t            audio_out_sample_rate = 96000;
 
-
-void core1_main(void)
+static void core1_main(void)
 {
     dvi_register_irqs_this_core(&dvi0, DMA_IRQ_0);
     dvi_start(&dvi0);
@@ -75,7 +74,7 @@ void core1_main(void)
     __builtin_unreachable();
 }
 
-void core1_scanline_callback(uint)
+static void core1_scanline_callback(uint)
 {
     // Discard any scanline pointers passed back
     uint16_t *bufptr;
@@ -86,6 +85,73 @@ void core1_scanline_callback(uint)
     bufptr = &g_framebuf[FRAME_WIDTH * scanline];
     queue_add_blocking_u32(&dvi0.q_colour_valid, &bufptr);
     scanline = (scanline + 1) % FRAME_HEIGHT;
+}
+
+static void set_audio_dvi_parameters(uint32_t samplerate, bool setup)
+{
+    uint32_t cts;
+    uint32_t n;
+
+    switch (samplerate) {
+    case 96000:
+        cts = 25200;
+        n = 6144 * 2;
+        break;
+    case 48000:
+        cts = 25200;
+        n = 6144;
+        break;
+    case 44100:
+        cts = 28000;
+        n = 6272;
+        break;
+    case 32000:
+        cts = 25200;
+        n = 4096;
+        break;
+    default:
+        // Assume a freq. close to 32000, so let's use that
+        cts = 25200;
+        n = (128 * samplerate * cts) / 25200000;
+        break;
+    }
+
+    if (setup) {
+        dvi_set_audio_freq(&dvi0, samplerate, cts, n);
+    } else {
+        dvi_update_audio_freq(&dvi0, samplerate, cts, n);
+    }
+}
+
+static void set_audio_sampling_parameters(uint32_t samplerate)
+{
+    uint16_t numerator;
+    uint16_t denominator;
+
+    switch (samplerate) {
+    case 96000:
+        numerator = 1;
+        denominator = 2625; // No error
+        break;
+    case 48000:
+        numerator = 1;
+        denominator = 5250; // No error
+        break;
+    case 44100:
+        numerator = 4;
+        denominator = 22857; // Actual freq. 44100.28 Hz
+        break;
+    case 32000:
+        numerator = 1;
+        denominator = 7875; // No error
+        break;
+    default:
+        numerator = 1;
+        denominator = 252000000 / samplerate; // There might be rounding errors
+        break;
+    }
+
+    dma_timer_set_fraction(0, numerator, denominator);
 }
 
 int main(void)
@@ -126,17 +192,11 @@ int main(void)
     bufptr += FRAME_WIDTH;
     queue_add_blocking_u32(&dvi0.q_colour_valid, &bufptr);
 
-
      // HDMI Audio related
     dvi_get_blank_settings(&dvi0)->top    = 4 * 0;
     dvi_get_blank_settings(&dvi0)->bottom = 4 * 0;
-    // dvi_audio_sample_buffer_set(&dvi0, audio_buffer, AUDIO_BUFFER_SIZE);
-    // void dvi_audio_sample_dma_set_chan(struct dvi_inst *inst, int chan_a, audio_sample_t *buf_a, int chan_b, audio_sample_t *buf_b, int size) {
-    // dvi_set_audio_freq(&dvi0, 44100, 28000, 6272);
-    // dvi_set_audio_freq(&dvi0, 48000, 25200, 6144);
-    dvi_set_audio_freq(&dvi0, 96000, 25200, 6144 * 2);
-    // dvi_set_audio_freq(&dvi0, 32000, 25200, 4096);
 
+    set_audio_dvi_parameters(audio_out_sample_rate, true);
 
     printf("Core 1 start\n");
     multicore_launch_core1(core1_main);
@@ -258,8 +318,9 @@ int main(void)
 
     // Configure the DMA timer that pulls the latest sample at a constant frequency
     dma_timer_claim(0);
-    dma_timer_set_fraction(0, 1, 2625); // 252 MHz -> 96kHz
-    // dma_timer_set_fraction(0, 1, 5250); // 252 MHz -> 48kHz
+
+    set_audio_sampling_parameters(audio_out_sample_rate);
+
     channel_config_set_dreq(&c_audio_buffer_data, DREQ_DMA_TIMER0);
 
     volatile void* ptr = &last_audio_sample;
@@ -411,6 +472,31 @@ int main(void)
 
     while (1) {
         // printf("START\n");
+
+#if 0
+        if (frame % 100 == 0) {
+            static int mode = 0;
+            mode++;
+            switch (mode % 4) {
+            case 0:
+                audio_out_sample_rate = 32000;
+                break;
+            case 1:
+                audio_out_sample_rate = 44100;
+                break;
+            case 2:
+                audio_out_sample_rate = 48000;
+                break;
+            case 3:
+                audio_out_sample_rate = 96000;
+                break;
+            }
+            if (mode > 0) {
+                set_audio_dvi_parameters(audio_out_sample_rate, false);
+                set_audio_sampling_parameters(audio_out_sample_rate);
+            }
+        }
+#endif
 
         // Let the OSD code run
         osd_run();
@@ -602,4 +688,3 @@ end_of_line:
 
     __builtin_unreachable();
 }
-

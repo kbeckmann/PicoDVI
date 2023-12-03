@@ -117,6 +117,7 @@ void dvi_update_data_island_ptr(struct dvi_scanline_dma_list *dma_list, data_isl
 void dvi_audio_sample_buffer_set(struct dvi_inst *inst, audio_sample_t *buffer, int size);
 void dvi_audio_sample_dma_set_chan(struct dvi_inst *inst, int chan_a, audio_sample_t *buf_a, int chan_b, audio_sample_t *buf_b, int size);
 void dvi_set_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n);
+void dvi_update_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n);
 bool dvi_update_data_packet_(struct dvi_inst *inst, data_packet_t *packet);
 void inline dvi_update_data_packet(struct dvi_inst *inst) {
     data_packet_t packet;

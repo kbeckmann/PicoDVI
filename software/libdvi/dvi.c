@@ -371,6 +371,8 @@ void dvi_audio_sample_dma_set_chan(struct dvi_inst *inst, int chan_a, audio_samp
 // CTS: Cycle Time Stamp
 // N: HDMI Constant
 // 128 * audio_freq = video_freq * N / CTS
+// CTS = (video_freq * N) / (128 * audio_freq)
+// N   = (128 * audio_freq * CTS) / video_freq
 // e.g.: video_freq = 23495525, audio_freq = 44100 , CTS = 28000, N = 6727 
 void dvi_set_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n) {
     inst->audio_freq = audio_freq;
@@ -387,6 +389,17 @@ void dvi_set_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n) {
     printf("nPixPerLine: %d\n", nPixPerLine);
     printf("samples_per_frame: %d\n", inst->samples_per_frame);
     printf("samples_per_line16: %d\n", inst->samples_per_line16);
+}
+
+void dvi_update_audio_freq(struct dvi_inst *inst, int audio_freq, int cts, int n) {
+    inst->audio_freq = audio_freq;
+    set_audio_clock_regeneration(&inst->audio_clock_regeneration, cts, n);
+    set_audio_info_frame(&inst->audio_info_frame, audio_freq);
+    uint pixelClock =   dvi_timing_get_pixel_clock(inst->timing);
+    uint nPixPerFrame = dvi_timing_get_pixels_per_frame(inst->timing);
+    uint nPixPerLine =  dvi_timing_get_pixels_per_line(inst->timing);
+    inst->samples_per_frame  = (uint64_t)(audio_freq) * nPixPerFrame / pixelClock;
+    inst->samples_per_line16 = (uint64_t)(audio_freq) * nPixPerLine * 65536 / pixelClock;
 }
 
 void dvi_wait_for_valid_line(struct dvi_inst *inst) {
