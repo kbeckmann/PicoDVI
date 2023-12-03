@@ -1,5 +1,5 @@
 ;
-; Copyright (c) 2022-2023 Konrad Beckmann
+; Copyright (c) 2022 Konrad Beckmann
 ;
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
@@ -12,45 +12,51 @@
 
 ; Data is stable on Negedge of CLK
 
-n64_video_start:
+n64_start:
+
+    ; Change IO dir of all pins to INPUT
+    ; mov osr, null
+    ; out pindirs, 32
 
 .wrap_target
 
+wait_for_dsyncn:
+
     ; Wait for high CLK
     wait 1 pin 8
-
-    ; Sample 4 bytes in total
-    set x, 2
 
     ; Wait for low CLK
     wait 0 pin 8
 
-    ; if DSYNC: goto n64_video_start
-    jmp pin n64_video_start
+    ; if DSYNC: goto wait_for_dsyncn
+    jmp pin wait_for_dsyncn
 
-    ; DSYNC == 0
+    ; DSYNC = 0
 
-    ; Sample first byte if data + dsyncn
-    in pins, 8
-
-n64_video_capture_loop:
-
+    ; Sample into SYNC
+    in pins, 8 ; SYNC
     ; Wait for high CLK
     wait 1 pin 8
+
     ; Wait for low CLK
-    wait 0 pin 8
+    wait 0 pin 8 
+    in pins, 8 ; R
+    ; Wait for high CLK
+    wait 1 pin 8
 
-    ; Sample data + dsyncn
-    in pins, 8
+    ; Wait for low CLK
+    wait 0 pin 8 
+    in pins, 8 ; G
+    ; Wait for high CLK
+    wait 1 pin 8
 
-    jmp x-- n64_video_capture_loop
+    ; Wait for low CLK
+    wait 0 pin 8 
+    in pins, 8 ; B
 
-    ; Auto-push is enabled, saves one instruction/cycle
-    ; push
+    push
 
-    ; Implicit jump (wrap)
-    ; jmp wait_for_dsyncn
-.wrap
+.wrap             ; Handle PI transactions forever!
 
 
 % c-sdk {
@@ -66,8 +72,7 @@ void n64_program_init(PIO pio, uint sm, uint offset) {
     // Double the FIFO depth
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-    // Enable auto-push
-    sm_config_set_in_shift(&c, true, true, 32);
+    sm_config_set_out_shift(&c, true, false, 32);
 
     // GPIO0 -> GPIO8 as in pins
     sm_config_set_in_pins(&c, 0);
