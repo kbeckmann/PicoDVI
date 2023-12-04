@@ -16,4 +16,10 @@
     DD_BUTTON(__keys__)    \
 )
 
-void osd_run(void);
+typedef enum {
+    OSD_DONE = 0,
+    OSD_SKIP_NEXT_FRAME,
+    OSD_AGAIN
+} osd_ret_t;
+
+osd_ret_t osd_run(void);

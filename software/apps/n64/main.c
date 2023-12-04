@@ -470,11 +470,33 @@ int main(void)
     uint32_t t1 = 0;
 #endif
 
+    osd_ret_t ret;
+    bool skip_next_frame = false;
+
     while (1) {
         // printf("START\n");
 
         // Let the OSD code run
-        osd_run();
+        
+        do {
+            ret = osd_run();
+            if (ret == OSD_AGAIN) {
+                skip_next_frame = true;
+            }
+        } while (ret == OSD_AGAIN);
+
+        if (ret == OSD_SKIP_NEXT_FRAME || skip_next_frame) {
+            skip_next_frame = false;
+            // A. Find posedge VSYNC
+            do {
+                BGRS = pio_sm_get_blocking(pio, sm_video);
+            } while (!(BGRS & VSYNCB_MASK));
+
+            // B. Find negedge VSYNC
+            do {
+                BGRS = pio_sm_get_blocking(pio, sm_video);
+            } while ((BGRS & VSYNCB_MASK));
+        }
 
         // 1. Find posedge VSYNC
         do {

@@ -33,6 +33,16 @@ typedef struct menu_item {
     } value;
 } menu_item_t;
 
+#define IS_FOCUSABLE(__x__) ( \
+    ((__x__) == ITEM_TYPE_VALUE_RW_U32) || \
+    ((__x__) == ITEM_TYPE_VALUE_RW_I32) || \
+    ((__x__) == ITEM_TYPE_VALUE_RO_U32) || \
+    ((__x__) == ITEM_TYPE_VALUE_RO_I32) || \
+    ((__x__) == ITEM_TYPE_MENU) || \
+    ((__x__) == ITEM_TYPE_BACK) || \
+    ((__x__) == ITEM_TYPE_EXIT) \
+)
+
 menu_item_t menu_audio[] = {
     {
         .text = "OSD Audio Menu",
@@ -47,6 +57,18 @@ menu_item_t menu_audio[] = {
 };
 
 menu_item_t menu[] = {
+    {
+        .text = "PicoDVI-N64 by @kbeckmann",
+    },
+    {
+        .text = "Git rev: <...>",
+    },
+    {
+        .text = "Build date: 2023-xx-xx",
+    },
+    {
+        .text = "",
+    },
     {
         .text = "OSD Menu",
     },
@@ -85,7 +107,7 @@ static struct {
 #define BUTTON_PRESSED(__op__) (!__op__(state.last_buttons) && __op__(buttons))
 
 
-void osd_run(void)
+osd_ret_t osd_run(void)
 {
     // Get Joybus state to decide if we should show the menu
     uint32_t buttons = joybus_rx_get_latest();
@@ -100,57 +122,74 @@ void osd_run(void)
         memset(state.stack, 0, sizeof(state.stack));
     }
 
+    if (!state.open) {
+        return OSD_DONE;
+    }
+
     bool rerender = false;
 
     // Show OSD menu
-    while (state.open && !rerender) {
-        menu_item_t *item = state.current_root;
-        uint32_t y = OSD_Y_OFFSET;
-        uint32_t x = OSD_X_OFFSET;
+    menu_item_t *item = state.current_root;
+    uint32_t y = OSD_Y_OFFSET;
+    uint32_t x = OSD_X_OFFSET;
 
-        if (state.focused_item == NULL) {
-            state.focused_item = item;
-        }
-
-        // Render
-        while (item && item->text) {
-            uint16_t bg_color = (item == state.focused_item) ? (RGB888_TO_RGB565(0xff, 0x00, 0xff)) : (RGB888_TO_RGB565(0x00, 0x00, 0x00));
-            uint16_t fg_color = RGB888_TO_RGB565(0xff, 0xff, 0xff);
-
-            gfx_puttextf(x, y++ * 8, bg_color, fg_color, "%s", item->text);
-            item++;
-        }
-
-        // Handle Input
-        buttons = joybus_rx_get_latest();
-        if (BUTTON_PRESSED(DD_BUTTON)) {
-            if ((state.focused_item + 1)->text != NULL) {
-                state.focused_item++;
+    if (state.focused_item == NULL) {
+        // Find first focusable item
+        menu_item_t *it = item;
+        while (it->text) {
+            if (IS_FOCUSABLE(it->type)) {
+                state.focused_item = it;
+                break;
             }
+            it++;
         }
-        else if (BUTTON_PRESSED(DU_BUTTON)) {
-            if (state.focused_item != state.current_root) {
-                state.focused_item--;
-            }
-        }
-        else if (BUTTON_PRESSED(A_BUTTON)) {
-            if (state.focused_item->type == ITEM_TYPE_MENU) {
-                menu_item_t *previous_root = state.current_root;
-                state.current_root = (menu_item_t *) state.focused_item->value.value_ptr;
-                state.current_root->value.value_ptr = previous_root;
-                state.focused_item = NULL;
-                rerender = true;
-            }
-            else if (state.focused_item->type == ITEM_TYPE_BACK) {
-                state.current_root = (menu_item_t *) state.current_root->value.value_ptr;
-                state.focused_item = NULL;
-                rerender = true;
-            }
-            else if (state.focused_item->type == ITEM_TYPE_EXIT) {
-                state.open = false;
-            }
-        }
-
-        state.last_buttons = buttons;
     }
+
+    // Render
+    while (item && item->text) {
+        uint16_t bg_color = (item == state.focused_item) ? (RGB888_TO_RGB565(0xff, 0x00, 0xff)) : (RGB888_TO_RGB565(0x00, 0x00, 0x00));
+        uint16_t fg_color = RGB888_TO_RGB565(0xff, 0xff, 0xff);
+
+        gfx_puttextf(x, y++ * 8, bg_color, fg_color, "%s", item->text);
+
+        item++;
+    }
+
+    // Handle Input
+    buttons = joybus_rx_get_latest();
+    if (BUTTON_PRESSED(DD_BUTTON)) {
+        if ((state.focused_item + 1)->text != NULL) {
+            state.focused_item++;
+        }
+    }
+    else if (BUTTON_PRESSED(DU_BUTTON)) {
+        if (state.focused_item != state.current_root) {
+            state.focused_item--;
+        }
+    }
+    else if (BUTTON_PRESSED(A_BUTTON)) {
+        if (state.focused_item->type == ITEM_TYPE_MENU) {
+            menu_item_t *previous_root = state.current_root;
+            state.current_root = (menu_item_t *) state.focused_item->value.value_ptr;
+            state.current_root->value.value_ptr = previous_root;
+            state.focused_item = NULL;
+            rerender = true;
+        }
+        else if (state.focused_item->type == ITEM_TYPE_BACK) {
+            state.current_root = (menu_item_t *) state.current_root->value.value_ptr;
+            state.focused_item = NULL;
+            rerender = true;
+        }
+        else if (state.focused_item->type == ITEM_TYPE_EXIT) {
+            state.open = false;
+        }
+    }
+
+    state.last_buttons = buttons;
+    
+    if (rerender) {
+        return OSD_SKIP_NEXT_FRAME;
+    }
+
+    return OSD_AGAIN;
 }
