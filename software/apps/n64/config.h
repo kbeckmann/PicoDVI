@@ -46,8 +46,8 @@
 // #define DIAGNOSTICS
 // #define DIAGNOSTICS_JOYBUS
 
-#define CONFIG_MAGIC1 0x123456768
-#define CONFIG_MAGIC2 0xdeadf000d
+#define CONFIG_MAGIC1 0x12345678
+#define CONFIG_MAGIC2 0xdeadf00d
 
 typedef enum dvi_color_mode {
     DVI_RGB_555 = 0,
