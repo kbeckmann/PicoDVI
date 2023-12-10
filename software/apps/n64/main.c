@@ -93,25 +93,25 @@ static void core1_scanline_callback(uint)
     scanline = (scanline + 1) % FRAME_HEIGHT;
 }
 
-static void set_audio_dvi_parameters(uint32_t samplerate, bool setup)
+static void set_audio_dvi_parameters(sample_rate_hz_t samplerate, bool setup)
 {
     uint32_t cts;
     uint32_t n;
 
     switch (samplerate) {
-    case 96000:
+    case SAMPLE_RATE_96000_HZ:
         cts = 25200;
         n = 6144 * 2;
         break;
-    case 48000:
+    case SAMPLE_RATE_48000_HZ:
         cts = 25200;
         n = 6144;
         break;
-    case 44100:
+    case SAMPLE_RATE_44100_HZ:
         cts = 28000;
         n = 6272;
         break;
-    case 32000:
+    case SAMPLE_RATE_32000_HZ:
         cts = 25200;
         n = 4096;
         break;
@@ -129,25 +129,25 @@ static void set_audio_dvi_parameters(uint32_t samplerate, bool setup)
     }
 }
 
-static void set_audio_sampling_parameters(uint32_t samplerate)
+static void set_audio_sampling_parameters(sample_rate_hz_t samplerate)
 {
     uint16_t numerator;
     uint16_t denominator;
 
     switch (samplerate) {
-    case 96000:
+    case SAMPLE_RATE_96000_HZ:
         numerator = 1;
         denominator = 2625; // No error
         break;
-    case 48000:
+    case SAMPLE_RATE_48000_HZ:
         numerator = 1;
         denominator = 5250; // No error
         break;
-    case 44100:
+    case SAMPLE_RATE_44100_HZ:
         numerator = 4;
         denominator = 22857; // Actual freq. 44100.28 Hz
         break;
-    case 32000:
+    case SAMPLE_RATE_32000_HZ:
         numerator = 1;
         denominator = 7875; // No error
         break;

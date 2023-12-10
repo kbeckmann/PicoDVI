@@ -55,11 +55,18 @@ typedef enum dvi_color_mode {
     DVI_RGB_888,
 } dvi_color_mode_t;
 
+typedef enum sample_rate_hz {
+    SAMPLE_RATE_32000_HZ = 32000,
+    SAMPLE_RATE_44100_HZ = 44100,
+    SAMPLE_RATE_48000_HZ = 48000,
+    SAMPLE_RATE_96000_HZ = 96000,
+} sample_rate_hz_t;
+
 typedef struct config {
     uint32_t magic1;
 
-    uint32_t audio_out_sample_rate;
-    dvi_color_mode_t dvi_color_mode;
+    uint32_t audio_out_sample_rate; // sample_rate_hz_t
+    uint32_t dvi_color_mode;        // dvi_color_mode_t
 
     uint32_t magic2;
 } config_t;
